@@ -1,1 +1,6 @@
 .alma-snapshots
+.build
+.DS_Store
+*.swp
+*.swo
+
