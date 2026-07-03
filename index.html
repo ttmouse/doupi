@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Omia Viewer — Local File Browser</title>
+
+  <!-- Favicon (emoji-based, no external file needed) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+
+  <!-- highlight.js: theme swapped by JS, library loaded once -->
+  <link id="hljs-theme" rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+          defer></script>
+
+  <style>
+    /* ============================================================
+       CSS Variables & Theming
+       ============================================================ */
+    :root {
+      --bg:               #f3f2ee;
+      --surface:          #ffffff;
+      --surface-hover:    #faf9f6;
+      --text:             #1d1d1f;
+      --text-secondary:   #6b6b6b;
+      --text-tertiary:    #a8a69e;
+      --border:           #e5e3db;
+      --accent:           #7BC043;
+      --accent-dark:      #4A7A23;
+      --accent-glow:      rgba(123, 192, 67, 0.10);
+      --accent-light:     rgba(123, 192, 67, 0.06);
+      --code-bg:          #f9f8f6;
+      --line-number:      #c5c2b8;
+      --shadow:           0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+      --shadow-lg:        0 4px 24px rgba(0,0,0,0.06);
+      --radius:           12px;
+      --radius-sm:        8px;
+      --font-sans:        -apple-system, 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono:        'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg:               #161618;
+      --surface:          #1e1e22;
+      --surface-hover:    #26262b;
+      --text:             #e8e8e8;
+      --text-secondary:   #9a9a9e;
+      --text-tertiary:    #6b6b70;
+      --border:           #2e2e33;
+      --accent:           #7BC043;
+      --accent-dark:      #8ed45a;
+      --accent-glow:      rgba(123, 192, 67, 0.07);
+      --accent-light:     rgba(123, 192, 67, 0.04);
+      --code-bg:          #1a1a1e;
+      --line-number:      #3e3e44;
+      --shadow:           0 1px 3px rgba(0,0,0,0.2);
+      --shadow-lg:        0 4px 24px rgba(0,0,0,0.3);
+    }
+
+    /* ============================================================
+       Reset & Base
+       ============================================================ */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      transition: background-color 0.35s ease, color 0.35s ease;
+    }
+
+    /* Fade transitions for themed elements */
+    .header, .file-info, .drop-zone, .content-view, .code-wrapper,
+    .viewer, pre, code, .line-numbers, .btn, .icon-btn,
+    img, iframe, .hljs {
+      transition: background-color 0.35s ease, border-color 0.35s ease,
+                  color 0.35s ease, box-shadow 0.35s ease;
+    }
+
+    /* ============================================================
+       Background Glow
+       ============================================================ */
+    .bg-glow {
+      position: fixed;
+      top: -240px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 640px;
+      background: radial-gradient(ellipse, var(--accent-glow), transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+      transition: background 0.6s ease;
+    }
+
+    /* ============================================================
+       Header
+       ============================================================ */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      height: 58px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .logo-text {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .logo-text span {
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ============================================================
+       Buttons
+       ============================================================ */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transition: all 0.2s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--accent);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-dark);
+      border-color: var(--accent-dark);
+    }
+
+    .icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text-secondary);
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transition: all 0.2s ease;
+    }
+
+    .icon-btn:hover {
+      background: var(--surface-hover);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .icon-btn:active {
+      transform: scale(0.93);
+    }
+
+    .icon-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* ============================================================
+       Main / Drop Zone (Empty State)
+       ============================================================ */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      z-index: 1;
+    }
+
+    .drop-zone {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 40px 24px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .drop-zone.drag-over {
+      background: var(--accent-light);
+    }
+    .drop-zone.drag-over .drop-box {
+      border-color: var(--accent);
+      border-style: solid;
+      background: var(--accent-light);
+      transform: scale(1.01);
+    }
+
+    .drop-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 60px 40px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+      max-width: 540px;
+      width: 100%;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .drop-box:hover {
+      border-color: var(--accent);
+      border-style: dashed;
+    }
+
+    .drop-icon {
+      width: 64px;
+      height: 72px;
+      color: var(--text-tertiary);
+      transition: color 0.3s ease;
+    }
+
+    .drop-zone:hover .drop-icon {
+      color: var(--accent);
+    }
+
+    .drop-icon svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .drop-sub {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .drop-sub .btn-inline {
+      color: var(--accent);
+      font-weight: 500;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      text-decoration-color: transparent;
+      transition: text-decoration-color 0.2s;
+      font-family: var(--font-sans);
+      font-size: 14px;
+    }
+
+    .drop-sub .btn-inline:hover {
+      text-decoration-color: var(--accent);
+    }
+
+    .drop-formats {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .drop-formats span {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      background: var(--accent-light);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      font-weight: 450;
+    }
+
+    /* ============================================================
+       Viewer (File Loaded State)
+       ============================================================ */
+    .viewer {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .viewer.active {
+      display: flex;
+    }
+
+    /* File Info Bar */
+    .file-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .file-info-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .file-icon-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      background: var(--accent-light);
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .file-name {
+      font-size: 14px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-size {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-weight: 450;
+      background: var(--accent-light);
+      padding: 2px 10px;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .file-extension {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      font-family: var(--font-mono);
+    }
+
+    .file-info-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      user-select: none;
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      transition: all 0.2s ease;
+    }
+
+    .toggle-wrap:hover {
+      border-color: var(--accent);
+    }
+
+    .toggle-wrap input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 32px;
+      height: 18px;
+      border-radius: 100px;
+      background: var(--border);
+      border: none;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.25s ease;
+      flex-shrink: 0;
+    }
+
+    .toggle-wrap input[type="checkbox"]::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      transition: transform 0.25s ease;
+    }
+
+    .toggle-wrap input[type="checkbox"]:checked {
+      background: var(--accent);
+    }
+
+    .toggle-wrap input[type="checkbox"]:checked::after {
+      transform: translateX(14px);
+    }
+
+    /* ============================================================
+       Content Views
+       ============================================================ */
+    .content-view {
+      flex: 1;
+      display: none;
+      overflow: auto;
+      position: relative;
+    }
+
+    .content-view.active {
+      display: flex;
+    }
+
+    /* --- Code View --- */
+    .code-view {
+      flex-direction: column;
+    }
+
+    .code-wrapper {
+      display: flex;
+      flex: 1;
+      overflow: auto;
+      background: var(--code-bg);
+      position: relative;
+    }
+
+    .line-numbers {
+      display: flex;
+      flex-direction: column;
+      padding: 16px 0 16px 16px;
+      min-width: 48px;
+      text-align: right;
+      color: var(--line-number);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      user-select: none;
+      border-right: 1px solid var(--border);
+      background: var(--code-bg);
+      flex-shrink: 0;
+      transition: background-color 0.35s ease, color 0.35s ease, border-color 0.35s ease;
+    }
+
+    .line-numbers span {
+      display: block;
+    }
+
+    .code-wrapper pre {
+      flex: 1;
+      margin: 0;
+      padding: 16px 20px;
+      background: transparent !important;
+      overflow: visible;
+    }
+
+    .code-wrapper code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      background: transparent !important;
+      padding: 0 !important;
+      white-space: pre;
+      word-wrap: normal;
+      color: var(--text);
+      transition: none;
+    }
+
+    .code-wrapper code.word-wrap {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* highlight.js overrides (light mode) */
+    .hljs { background: transparent !important; color: var(--text); }
+    .hljs-keyword,
+    .hljs-selector-tag,
+    .hljs-title,
+    .hljs-section,
+    .hljs-doctag,
+    .hljs-name,
+    .hljs-strong { color: #aa4d2e; }
+    .hljs-comment { color: #8a8a8a; font-style: italic; }
+    .hljs-string,
+    .hljs-title.class_,
+    .hljs-title.class_.inherited__,
+    .hljs-template-variable,
+    .hljs-addition { color: #548c2f; }
+    .hljs-number,
+    .hljs-literal,
+    .hljs-variable,
+    .hljs-template-tag,
+    .hljs-tag .hljs-attr { color: #b47d2e; }
+    .hljs-built_in,
+    .hljs-type { color: #6b7db3; }
+    .hljs-attr,
+    .hljs-attribute,
+    .hljs-selector-class,
+    .hljs-selector-id { color: #6a4e9e; }
+    .hljs-regexp,
+    .hljs-link { color: #b45a3a; }
+    .hljs-symbol,
+    .hljs-bullet { color: #7f7f7f; }
+    .hljs-deletion { color: #b33a3a; }
+    .hljs-meta { color: #6b6b6b; }
+
+    /* highlight.js overrides (dark mode) */
+    [data-theme="dark"] .hljs-keyword,
+    [data-theme="dark"] .hljs-selector-tag,
+    [data-theme="dark"] .hljs-title,
+    [data-theme="dark"] .hljs-section,
+    [data-theme="dark"] .hljs-doctag,
+    [data-theme="dark"] .hljs-name,
+    [data-theme="dark"] .hljs-strong { color: #f28b6b; }
+    [data-theme="dark"] .hljs-comment { color: #6b6b70; font-style: italic; }
+    [data-theme="dark"] .hljs-string,
+    [data-theme="dark"] .hljs-title.class_,
+    [data-theme="dark"] .hljs-title.class_.inherited__,
+    [data-theme="dark"] .hljs-template-variable,
+    [data-theme="dark"] .hljs-addition { color: #8bc96a; }
+    [data-theme="dark"] .hljs-number,
+    [data-theme="dark"] .hljs-literal,
+    [data-theme="dark"] .hljs-variable,
+    [data-theme="dark"] .hljs-template-tag,
+    [data-theme="dark"] .hljs-tag .hljs-attr { color: #dbba5e; }
+    [data-theme="dark"] .hljs-built_in,
+    [data-theme="dark"] .hljs-type { color: #8aa9e3; }
+    [data-theme="dark"] .hljs-attr,
+    [data-theme="dark"] .hljs-attribute,
+    [data-theme="dark"] .hljs-selector-class,
+    [data-theme="dark"] .hljs-selector-id { color: #b490e0; }
+    [data-theme="dark"] .hljs-regexp,
+    [data-theme="dark"] .hljs-link { color: #e0805a; }
+    [data-theme="dark"] .hljs-symbol,
+    [data-theme="dark"] .hljs-bullet { color: #9a9a9e; }
+    [data-theme="dark"] .hljs-deletion { color: #d45a5a; }
+    [data-theme="dark"] .hljs-meta { color: #8a8a8e; }
+
+    /* --- Image View --- */
+    .image-view {
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      background: var(--bg);
+    }
+
+    .image-view img {
+      max-width: 100%;
+      max-height: calc(100vh - 160px);
+      object-fit: contain;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      background: var(--surface);
+    }
+
+    /* --- Iframe View --- */
+    .iframe-view iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #fff;
+    }
+
+    /* --- Unsupported View --- */
+    .unsupported-view {
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .unsupported-view .unsupported-icon {
+      font-size: 48px;
+      opacity: 0.4;
+    }
+
+    .unsupported-view h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .unsupported-view p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      max-width: 400px;
+      line-height: 1.5;
+    }
+
+    /* ============================================================
+       Loading Overlay
+       ============================================================ */
+    .loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      z-index: 10;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .loading.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ============================================================
+       Drag Overlay (visible during drag across page)
+       ============================================================ */
+    .drag-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: var(--accent-light);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .drag-overlay.active {
+      display: flex;
+    }
+
+    .drag-overlay-box {
+      padding: 40px 56px;
+      border: 2px dashed var(--accent);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+
+    .drag-overlay-box .drop-title {
+      font-size: 22px;
+    }
+
+    /* ============================================================
+       Responsive
+       ============================================================ */
+    @media (max-width: 768px) {
+      .header {
+        padding: 0 16px;
+      }
+      .logo-text {
+        font-size: 14px;
+      }
+      .logo-text span {
+        display: none;
+      }
+      .file-info {
+        padding: 10px 16px;
+      }
+      .file-name {
+        font-size: 13px;
+        max-width: 160px;
+      }
+      .drop-box {
+        padding: 40px 24px;
+      }
+      .drop-title {
+        font-size: 18px;
+      }
+      .line-numbers {
+        padding: 12px 0 12px 10px;
+        min-width: 36px;
+        font-size: 12px;
+      }
+      .code-wrapper pre {
+        padding: 12px 14px;
+      }
+      .code-wrapper code {
+        font-size: 12px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .btn {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      .icon-btn {
+        width: 32px;
+        height: 32px;
+      }
+      .file-info {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .file-info-right {
+        width: 100%;
+      }
+      .header-right {
+        gap: 6px;
+      }
+      .drop-box {
+        padding: 32px 16px;
+      }
+      .drop-formats span {
+        font-size: 10px;
+        padding: 2px 8px;
+      }
+      .image-view {
+        padding: 16px;
+      }
+    }
+
+    /* ============================================================
+       Scrollbar styling
+       ============================================================ */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 100px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-tertiary);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       Background Glow
+       ============================================================ -->
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <!-- ============================================================
+       Drag Overlay (full-page drag indicator)
+       ============================================================ -->
+  <div id="drag-overlay" class="drag-overlay">
+    <div class="drag-overlay-box">
+      <div class="drop-title">Drop file to view</div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Header
+       ============================================================ -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-icon">✦</div>
+      <span class="logo-text">Omia <span>Viewer</span></span>
+    </div>
+    <div class="header-right">
+      <button id="theme-toggle" class="icon-btn" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg id="sun-icon" viewBox="0 0 24 24" width="18" height="18">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg id="moon-icon" viewBox="0 0 24 24" width="18" height="18" style="display:none">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <button id="open-btn" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        Open File
+      </button>
+      <input type="file" id="file-input" accept="*/*" hidden>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       Main Content
+       ============================================================ -->
+  <main class="main">
+
+    <!-- Empty state: Drop zone -->
+    <div id="drop-zone" class="drop-zone">
+      <div class="drop-box">
+        <div class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 72 82" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linejoin="round" stroke-linecap="round">
+            <!-- Document body -->
+            <path d="M14 76 L52 76 L62 66 L62 10 L14 10 Z"/>
+            <!-- Down arrow -->
+            <path d="M36 34 L36 56 M29 49 L36 56 L43 49" stroke-width="2.2"/>
+            <!-- Text lines -->
+            <line x1="24" y1="24" x2="44" y2="24" stroke-width="1.8" opacity="0.6"/>
+            <line x1="24" y1="32" x2="50" y2="32" stroke-width="1.8" opacity="0.5"/>
+            <line x1="24" y1="40" x2="38" y2="40" stroke-width="1.8" opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="drop-title">Drop file here</div>
+        <div class="drop-sub">
+          or <button class="btn-inline" id="browse-btn">browse files</button> to preview
+        </div>
+        <div class="drop-formats">
+          <span>HTML</span><span>JSX</span><span>TSX</span><span>JS</span><span>TS</span>
+          <span>CSS</span><span>JSON</span><span>YAML</span><span>XML</span><span>Python</span>
+          <span>Go</span><span>Rust</span><span>Java</span><span>C/C++</span><span>SQL</span>
+          <span>Shell</span><span>Markdown</span><span>Text</span><span>Images</span>
+          <span style="background:var(--accent);color:#fff;border-color:var(--accent)">&amp; more</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- File loaded state: Viewer -->
+    <div id="viewer" class="viewer">
+
+      <!-- File info bar -->
+      <div class="file-info">
+        <div class="file-info-left">
+          <div class="file-icon-badge" id="file-icon">📄</div>
+          <span class="file-name" id="file-name">filename.ext</span>
+          <span class="file-extension" id="file-ext">.ext</span>
+          <span class="file-size" id="file-size">0 B</span>
+        </div>
+        <div class="file-info-right">
+          <label class="toggle-wrap" title="Toggle word wrap">
+            <input type="checkbox" id="word-wrap-toggle">
+            <span>Wrap</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Loading spinner -->
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+      </div>
+
+      <!-- Code view -->
+      <div id="code-view" class="content-view code-view">
+        <div class="code-wrapper">
+          <div class="line-numbers" id="line-numbers"></div>
+          <pre><code id="code-content" class="hljs"></code></pre>
+        </div>
+      </div>
+
+      <!-- Image view -->
+      <div id="image-view" class="content-view image-view">
+        <img id="image-content" src="" alt="Uploaded file preview">
+      </div>
+
+      <!-- Iframe view -->
+      <div id="iframe-view" class="content-view iframe-view">
+        <iframe id="iframe-content" sandbox="allow-scripts allow-same-origin"
+                title="HTML preview"></iframe>
+      </div>
+
+      <!-- Unsupported view -->
+      <div id="unsupported-view" class="content-view unsupported-view">
+        <div class="unsupported-icon">📄</div>
+        <h3>Unsupported file type</h3>
+        <p>This file format cannot be previewed. Try a supported format like
+           HTML, JavaScript, TypeScript, CSS, Python, Go, Rust, images, and more.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================================
+       JavaScript
+       ============================================================ -->
+  <script>
+    (function() {
+      'use strict';
+
+      /* ============================================================
+         Configuration
+         ============================================================ */
+      const CODE_EXTENSIONS = [
+        'js', 'jsx', 'ts', 'tsx', 'css', 'json', 'yaml', 'yml',
+        'xml', 'py', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
+        'sql', 'sh', 'bash', 'zsh', 'toml', 'md', 'mdx', 'rb',
+        'php', 'swift', 'kt', 'scala', 'r', 'lua', 'pl', 'pm',
+        'groovy', 'gradle', 'cfg', 'ini', 'env', 'gitignore',
+        'dockerfile', 'makefile', 'cmake', 'vim', 'conf',
+        'properties', 'lock', 'bat', 'ps1', 'vue', 'svelte',
+        'astro', 'tex', 'latex', 'rst', 'asciidoc', 'mermaid',
+        'graphql', 'gql', 'proto', 'patch', 'diff', 'svg'
+      ];
+
+      const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'];
+      const IFRAME_EXTENSIONS = ['html', 'htm'];
+      const TEXT_EXTENSIONS = ['txt', 'log'];
+
+      const FILE_ICON_MAP = {
+        html:  '🌐', htm:   '🌐',
+        js:    '🟨', jsx:   '⚛️',
+        ts:    '🔷', tsx:   '⚛️',
+        css:   '🎨', json:  '📋',
+        yaml:  '📋', yml:   '📋',
+        xml:   '📋', py:    '🐍',
+        go:    '🔵', rs:    '🦀',
+        java:  '☕', c:     '⚙️',
+        cpp:   '⚙️', h:     '⚙️',
+        hpp:   '⚙️', sql:   '🗃️',
+        sh:    '💻', bash:  '💻',
+        zsh:   '💻', toml:  '📋',
+        md:    '📝', mdx:   '📝',
+        rb:    '💎', php:   '🐘',
+        swift: '🕊️', kt:    '🅺',
+        scala: '🔥', r:     '📊',
+        lua:   '🌙', pl:    '🐪',
+        pm:    '🐪', bat:   '🪟',
+        ps1:   '🪟', vue:   '💚',
+        svelte:'🧡', astro: '🚀',
+        tex:   '📐', rst:   '📐',
+        graphql:'◈', gql:   '◈',
+        proto: '📡', diff:  '🔀',
+        patch: '🔀', dockerfile: '🐳',
+        makefile: '🔨', cmake: '🔨',
+        txt:   '📄', log:   '📄',
+        svg:   '🖼️',
+      };
+
+      const DEFAULT_ICON = '📄';
+
+      /* ============================================================
+         DOM References
+         ============================================================ */
+      const $ = (id) => document.getElementById(id);
+
+      const els = {
+        html:            document.documentElement,
+        dropZone:        $('drop-zone'),
+        dragOverlay:     $('drag-overlay'),
+        viewer:          $('viewer'),
+        fileInput:       $('file-input'),
+        openBtn:         $('open-btn'),
+        browseBtn:       $('browse-btn'),
+        themeToggle:     $('theme-toggle'),
+        sunIcon:         $('sun-icon'),
+        moonIcon:        $('moon-icon'),
+        fileIcon:        $('file-icon'),
+        fileName:        $('file-name'),
+        fileExt:         $('file-ext'),
+        fileSize:        $('file-size'),
+        wordWrapToggle:  $('word-wrap-toggle'),
+        loading:         $('loading'),
+
+        codeView:        $('code-view'),
+        lineNumbers:     $('line-numbers'),
+        codeContent:     $('code-content'),
+
+        imageView:       $('image-view'),
+        imageContent:    $('image-content'),
+
+        iframeView:      $('iframe-view'),
+        iframeContent:   $('iframe-content'),
+
+        unsupportedView: $('unsupported-view'),
+      };
+
+      /* ============================================================
+         State
+         ============================================================ */
+      const state = {
+        isDark:    false,
+        wordWrap:  false,
+        file:      null,
+        content:   null,
+        viewType:  null,  // 'code' | 'image' | 'iframe' | 'unsupported'
+      };
+
+      let dragCounter = 0;
+
+      /* ============================================================
+         Utility Functions
+         ============================================================ */
+      function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+
+      function getExtension(filename) {
+        const dot = filename.lastIndexOf('.');
+        if (dot === -1) return '';
+        return filename.slice(dot + 1).toLowerCase();
+      }
+
+      function getViewType(ext) {
+        if (IFRAME_EXTENSIONS.includes(ext)) return 'iframe';
+        if (IMAGE_EXTENSIONS.includes(ext))   return 'image';
+        if (ext === '' || ext === 'txt' || ext === 'log') return 'text';
+        // treat any unknown extension as code (try highlighting)
+        return 'code';
+      }
+
+      function getFileIcon(ext) {
+        return FILE_ICON_MAP[ext] || DEFAULT_ICON;
+      }
+
+      function getMimeType(ext) {
+        const map = {
+          png:  'image/png',  jpg: 'image/jpeg', jpeg: 'image/jpeg',
+          gif:  'image/gif',  webp:'image/webp',  bmp: 'image/bmp',
+          ico:  'image/x-icon',
+          svg:  'image/svg+xml',
+          html: 'text/html',  htm: 'text/html',
+        };
+        return map[ext] || 'text/plain';
+      }
+
+      /* ============================================================
+         Theme
+         ============================================================ */
+      function applyTheme(isDark) {
+        state.isDark = isDark;
+        els.html.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        els.sunIcon.style.display = isDark ? 'none' : 'block';
+        els.moonIcon.style.display = isDark ? 'block' : 'none';
+
+        // Swap highlight.js theme stylesheet
+        const themeLink = document.getElementById('hljs-theme');
+        if (themeLink) {
+          themeLink.href = isDark
+            ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css'
+            : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+        }
+
+        localStorage.setItem('omia-viewer-theme', isDark ? 'dark' : 'light');
+      }
+
+      function toggleTheme() {
+        applyTheme(!state.isDark);
+      }
+
+      /* ============================================================
+         View Switching
+         ============================================================ */
+      function showView(viewType) {
+        state.viewType = viewType;
+        [els.codeView, els.imageView, els.iframeView, els.unsupportedView]
+          .forEach(el => el.classList.remove('active'));
+        if (viewType === 'code' || viewType === 'text') {
+          els.codeView.classList.add('active');
+        } else if (viewType === 'image') {
+          els.imageView.classList.add('active');
+        } else if (viewType === 'iframe') {
+          els.iframeView.classList.add('active');
+        } else {
+          els.unsupportedView.classList.add('active');
+        }
+      }
+
+      /* ============================================================
+         Line Numbers
+         ============================================================ */
+      function renderLineNumbers(code) {
+        const lines = code.split('\n');
+        // If the last line is empty (trailing newline), still count it
+        const count = lines.length;
+        return Array.from({ length: count }, (_, i) =>
+          `<span>${i + 1}</span>`
+        ).join('');
+      }
+
+      /* ============================================================
+         File Handling
+         ============================================================ */
+      function showLoading(show) {
+        els.loading.classList.toggle('active', show);
+      }
+
+      function handleFile(file) {
+        if (!file) return;
+        state.file = file;
+
+        const ext = getExtension(file.name);
+        const viewType = getViewType(ext);
+        const icon = getFileIcon(ext);
+
+        // Update info bar
+        els.fileIcon.textContent = icon;
+        els.fileName.textContent = file.name;
+        els.fileExt.textContent = ext ? '.' + ext : '';
+        els.fileSize.textContent = formatSize(file.size);
+
+        // Show viewer, hide drop zone
+        els.dropZone.style.display = 'none';
+        els.viewer.classList.add('active');
+        showLoading(true);
+
+        // Small delay for loading UX
+        setTimeout(() => {
+          if (viewType === 'image') {
+            const url = URL.createObjectURL(file);
+            els.imageContent.onload = () => {
+              URL.revokeObjectURL(url);
+              showLoading(false);
+            };
+            els.imageContent.onerror = () => {
+              URL.revokeObjectURL(url);
+              showLoading(false);
+              showView('unsupported');
+            };
+            els.imageContent.src = url;
+            showView('image');
+
+          } else if (viewType === 'iframe') {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const blob = new Blob([e.target.result], { type: 'text/html' });
+              const url = URL.createObjectURL(blob);
+              els.iframeContent.src = url;
+              showLoading(false);
+              // Revoke after load
+              els.iframeContent.onload = () => {
+                // Can't revoke immediately; let browser keep ref
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+              };
+            };
+            reader.onerror = () => {
+              showLoading(false);
+              showView('unsupported');
+            };
+            reader.readAsText(file);
+            showView('iframe');
+
+          } else {
+            // Code or text — read as text
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              state.content = e.target.result;
+              renderCode(state.content, file.name, ext);
+              showLoading(false);
+            };
+            reader.onerror = () => {
+              showLoading(false);
+              showView('unsupported');
+            };
+            reader.readAsText(file);
+            showView('code');
+          }
+        }, 120); // subtle loading indicator flash
+      }
+
+      /* ============================================================
+         Code Rendering
+         ============================================================ */
+      function renderCode(content, filename, ext) {
+        // Update line numbers
+        els.lineNumbers.innerHTML = renderLineNumbers(content);
+
+        // Determine language for highlight.js
+        let lang = ext;
+        // Normalize some extensions
+        const langMap = {
+          sh: 'bash', bash: 'bash', zsh: 'bash',
+          js: 'javascript', jsx: 'javascript',
+          ts: 'typescript', tsx: 'typescript',
+          py: 'python', rb: 'ruby',
+          rs: 'rust', go: 'go',
+          c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+          java: 'java', php: 'php',
+          swift: 'swift', kt: 'kotlin',
+          scala: 'scala', r: 'r',
+          lua: 'lua', pl: 'perl', pm: 'perl',
+          groovy: 'groovy', gradle: 'groovy',
+          vue: 'html', svelte: 'html', astro: 'html',
+          sql: 'sql', toml: 'ini', ini: 'ini',
+          yaml: 'yaml', yml: 'yaml',
+          xml: 'xml', svg: 'xml',
+          md: 'markdown', mdx: 'markdown',
+          tex: 'latex', latex: 'latex',
+          diff: 'diff', patch: 'diff',
+          graphql: 'graphql', gql: 'graphql',
+          proto: 'protobuf',
+          dockerfile: 'dockerfile', makefile: 'makefile',
+          cmake: 'cmake', bat: 'dos', ps1: 'powershell',
+          vim: 'vim',
+          conf: 'nginx', properties: 'properties',
+          env: 'ini', gitignore: 'ini',
+          lock: 'json',
+        };
+
+        const hljsLang = langMap[lang] || ext;
+
+        // Highlight with highlight.js
+        if (typeof hljs !== 'undefined') {
+          let highlighted;
+          if (hljs.getLanguage(hljsLang)) {
+            try {
+              highlighted = hljs.highlight(content, { language: hljsLang }).value;
+            } catch (e) {
+              highlighted = hljs.highlightAuto(content).value;
+            }
+          } else {
+            highlighted = hljs.highlightAuto(content).value;
+          }
+          els.codeContent.innerHTML = highlighted;
+        } else {
+          // Fallback: escape HTML
+          els.codeContent.textContent = content;
+        }
+
+        // Apply word wrap state
+        els.codeContent.classList.toggle('word-wrap', state.wordWrap);
+        els.wordWrapToggle.checked = state.wordWrap;
+
+        // Sync scroll between line numbers and code
+        const wrapper = els.codeView.querySelector('.code-wrapper');
+        const codePre = els.codeView.querySelector('pre');
+        const lineNumEl = els.lineNumbers;
+
+        // Simple sync: on scroll of the wrapper, line numbers scroll with it
+        // Since they're both inside the same flex container, they scroll together naturally.
+      }
+
+      /* ============================================================
+         Word Wrap
+         ============================================================ */
+      function toggleWordWrap() {
+        state.wordWrap = !state.wordWrap;
+        els.codeContent.classList.toggle('word-wrap', state.wordWrap);
+        els.wordWrapToggle.checked = state.wordWrap;
+      }
+
+      /* ============================================================
+         Drag & Drop
+         ============================================================ */
+
+      // ---- Full-page drag overlay (using counter to handle child events) ----
+      document.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if (dragCounter === 1) {
+          els.dragOverlay.classList.add('active');
+        }
+      });
+
+      document.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+          dragCounter = 0;
+          els.dragOverlay.classList.remove('active');
+        }
+      });
+
+      document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+
+      document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        els.dragOverlay.classList.remove('active');
+        els.dropZone.classList.remove('drag-over');
+
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          handleFile(files[0]);
+        }
+      });
+
+      // ---- Drop zone visual feedback ----
+      els.dropZone.addEventListener('dragenter', () => {
+        els.dropZone.classList.add('drag-over');
+      });
+      els.dropZone.addEventListener('dragleave', () => {
+        els.dropZone.classList.remove('drag-over');
+      });
+      els.dropZone.addEventListener('dragover', (e) => e.preventDefault());
+      els.dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        els.dropZone.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          handleFile(files[0]);
+        }
+      });
+
+      /* ============================================================
+         File Picker
+         ============================================================ */
+      els.openBtn.addEventListener('click', () => els.fileInput.click());
+      els.browseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        els.fileInput.click();
+      });
+
+      els.fileInput.addEventListener('change', () => {
+        if (els.fileInput.files && els.fileInput.files.length > 0) {
+          handleFile(els.fileInput.files[0]);
+        }
+        els.fileInput.value = ''; // allow re-selecting the same file
+      });
+
+      /* ============================================================
+         Keyboard Shortcuts
+         ============================================================ */
+      document.addEventListener('keydown', (e) => {
+        // Ctrl+O / Cmd+O → Open file
+        if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+          e.preventDefault();
+          els.fileInput.click();
+        }
+        // T — Toggle theme
+        if (e.key === 't' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const active = document.activeElement;
+          if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+          toggleTheme();
+        }
+        // W — Toggle word wrap
+        if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const active = document.activeElement;
+          if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+          toggleWordWrap();
+        }
+      });
+
+      /* ============================================================
+         Initialization
+         ============================================================ */
+      function init() {
+        // Restore theme from localStorage
+        const savedTheme = localStorage.getItem('omia-viewer-theme') || 'light';
+        applyTheme(savedTheme === 'dark');
+
+        // Word wrap toggle
+        els.wordWrapToggle.addEventListener('change', toggleWordWrap);
+
+        // Theme toggle
+        els.themeToggle.addEventListener('click', toggleTheme);
+
+        // Handle page re-show (for iframe blob URLs)
+        window.addEventListener('pageshow', () => {
+          // If an iframe view was active, it might need re-loading
+          // This is handled naturally by the browser
+        });
+      }
+
+      // Wait for highlight.js to load, then init
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+
+      // Ensure highlight.js is loaded before we try highlighting
+      // If it loads after, we handle it in renderCode with a fallback
+      if (typeof hljs === 'undefined') {
+        // hljs is loaded with defer, so it should be ready by DOMContentLoaded
+        // Fallback: poll
+        let pollCount = 0;
+        const poll = setInterval(() => {
+          if (typeof hljs !== 'undefined') {
+            clearInterval(poll);
+          }
+          pollCount++;
+          if (pollCount > 50) clearInterval(poll); // ~5s timeout
+        }, 100);
+      }
+
+    })();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,92 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "DoupiViewer-arm64-apple-macosx-debug.exe": ["<DoupiViewer-arm64-apple-macosx-debug.exe>"]
+  "DoupiViewer-arm64-apple-macosx-debug.module": ["<DoupiViewer-arm64-apple-macosx-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<DoupiViewer-arm64-apple-macosx-debug.exe>","<DoupiViewer-arm64-apple-macosx-debug.module>"]
+  "test": ["<DoupiViewer-arm64-apple-macosx-debug.exe>","<DoupiViewer-arm64-apple-macosx-debug.module>"]
+default: "main"
+nodes:
+  "/Users/douba/Projects/doupi/Sources/DoupiViewer/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer":
+    is-mutated: true
+commands:
+  "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist"]
+    description: "Write auxiliary file /Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist"
+
+  "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/douba/Projects/doupi/Sources/DoupiViewer/CodeView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/ContentView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/DocumentView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/DoupiApp.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileDropDelegate.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileHistory.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileInfo.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileNode.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileSidebar.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/ImageView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/TSXPreview.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/Theme.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/WebView.swift","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DerivedSources/resource_bundle_accessor.swift"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources"]
+    description: "Write auxiliary file /Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources"
+
+  "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList"
+
+  "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer_DoupiViewer.bundle/Resources":
+    tool: copy-tool
+    inputs: ["/Users/douba/Projects/doupi/Sources/DoupiViewer/Resources/"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer_DoupiViewer.bundle/Resources/"]
+    description: "Copying /Users/douba/Projects/doupi/Sources/DoupiViewer/Resources"
+
+  "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<DoupiViewer-arm64-apple-macosx-debug.exe>":
+    tool: phony
+    inputs: ["<DoupiViewer-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    outputs: ["<DoupiViewer-arm64-apple-macosx-debug.exe>"]
+
+  "<DoupiViewer-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules/DoupiViewer.swiftmodule"]
+    outputs: ["<DoupiViewer-arm64-apple-macosx-debug.module>"]
+
+  "C.DoupiViewer-arm64-apple-macosx-debug.exe":
+    tool: shell
+    inputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/DoupiViewer"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug","-o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer","-module-name","DoupiViewer","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_DoupiViewer_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx14.0","-Xlinker","-add_ast_path","-Xlinker","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules/DoupiViewer.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.DoupiViewer-arm64-apple-macosx-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist"]
+    outputs: ["<DoupiViewer-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/DoupiViewer"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer"]
+
+  "C.DoupiViewer-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/douba/Projects/doupi/Sources/DoupiViewer/CodeView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/ContentView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/DocumentView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/DoupiApp.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileDropDelegate.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileHistory.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileInfo.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileNode.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/FileSidebar.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/ImageView.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/TSXPreview.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/Theme.swift","/Users/douba/Projects/doupi/Sources/DoupiViewer/WebView.swift","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DerivedSources/resource_bundle_accessor.swift","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","<DoupiViewer-arm64-apple-macosx-debug.module-resources>","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources"]
+    outputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules/DoupiViewer.swiftmodule"]
+    description: "Compiling Swift Module 'DoupiViewer' (14 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","DoupiViewer","-emit-dependencies","-emit-module","-emit-module-path","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules/DoupiViewer.swiftmodule","-output-file-map","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/output-file-map.json","-incremental","-c","@/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources","-I","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE","-module-cache-path","/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","DoupiViewer_main","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","doupi"]
+
+  "DoupiViewer-arm64-apple-macosx-debug.module-resources":
+    tool: phony
+    inputs: ["/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer_DoupiViewer.bundle/Resources/"]
+    outputs: ["<DoupiViewer-arm64-apple-macosx-debug.module-resources>"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/douba/Projects/doupi/Sources/DoupiViewer/","/Users/douba/Projects/doupi/Package.swift","/Users/douba/Projects/doupi/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

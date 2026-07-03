@@ -1,0 +1,515 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+    "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer_DoupiViewer.bundle/Resources" : {
+      "inputs" : [
+        {
+          "kind" : "directory",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/Resources"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "directory",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer_DoupiViewer.bundle/Resources"
+        }
+      ]
+    }
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.DoupiViewer-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources",
+      "importPath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/CodeView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/ContentView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/DocumentView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/DoupiApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileDropDelegate.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileHistory.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileInfo.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileNode.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileSidebar.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/ImageView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/TSXPreview.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/Theme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/WebView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DerivedSources/resource_bundle_accessor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<DoupiViewer-arm64-apple-macosx-debug.module-resources>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "DoupiViewer",
+      "moduleOutputPath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules/DoupiViewer.swiftmodule",
+      "objects" : [
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
+        "-module-cache-path",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "DoupiViewer_main",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "doupi"
+      ],
+      "outputFileMapPath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules/DoupiViewer.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/CodeView.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/ContentView.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/DocumentView.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/DoupiApp.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileDropDelegate.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileHistory.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileInfo.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileNode.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileSidebar.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/ImageView.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/TSXPreview.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/Theme.swift",
+        "/Users/douba/Projects/doupi/Sources/DoupiViewer/WebView.swift",
+        "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DerivedSources/resource_bundle_accessor.swift"
+      ],
+      "tempsPath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "DoupiViewer" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "DoupiViewer",
+      "-package-name",
+      "doupi",
+      "-c",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/CodeView.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/ContentView.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/DocumentView.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/DoupiApp.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileDropDelegate.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileHistory.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileInfo.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileNode.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileSidebar.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/ImageView.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/TSXPreview.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/Theme.swift",
+      "/Users/douba/Projects/doupi/Sources/DoupiViewer/WebView.swift",
+      "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DerivedSources/resource_bundle_accessor.swift",
+      "-I",
+      "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
+      "-module-cache-path",
+      "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "DoupiViewer_main",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "doupi",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "DoupiViewer" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer-entitlement.plist"
+    },
+    "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/CodeView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/ContentView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/DocumentView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/DoupiApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileDropDelegate.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileHistory.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileInfo.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileNode.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/FileSidebar.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/ImageView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/TSXPreview.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/Theme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/Sources/DoupiViewer/WebView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DerivedSources/resource_bundle_accessor.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/sources"
+    },
+    "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/CodeView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ContentView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DocumentView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/DoupiApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileDropDelegate.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileHistory.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileInfo.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileNode.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/FileSidebar.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/ImageView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/TSXPreview.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/Theme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/WebView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.build/resource_bundle_accessor.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/DoupiViewer.product/Objects.LinkFileList"
+    },
+    "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/douba/Projects/doupi/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}
