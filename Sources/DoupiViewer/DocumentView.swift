@@ -37,8 +37,7 @@ struct DocumentView: View {
     // MARK: - TSX/JSX preview
 
     private var tsxPreviewView: some View {
-        let content = (try? String(contentsOf: info.url, encoding: .utf8)) ?? ""
-        let html = TSXPreview.render(content)
+        let html = TSXPreview.render(fileURL: info.url)
         return WebView(htmlString: html)
     }
 
