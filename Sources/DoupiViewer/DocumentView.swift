@@ -23,22 +23,20 @@ struct DocumentView: View {
         }
     }
 
-    // MARK: - HTML
+    // MARK: - HTML (file URL loading so CSS/images work)
 
     private var htmlView: some View {
-        let content = (try? String(contentsOf: info.url, encoding: .utf8)) ?? """
-        <p style="color:red;font-family:sans-serif;padding:2rem;">
-          无法读取文件内容
-        </p>
-        """
-        return WebView(htmlString: content)
+        let readRoot = info.url.deletingLastPathComponent()
+        return WebView(
+            fileURL: info.url,
+            readAccessRoot: readRoot
+        )
     }
 
-    // MARK: - TSX/JSX preview
+    // MARK: - TSX/JSX preview (compiled via esbuild -> file URL)
 
     private var tsxPreviewView: some View {
-        let html = TSXPreview.render(fileURL: info.url)
-        return WebView(htmlString: html)
+        PreviewContainer(sourceURL: info.url)
     }
 
     // MARK: - Syntax-highlighted code

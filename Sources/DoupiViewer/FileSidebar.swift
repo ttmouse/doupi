@@ -1,17 +1,13 @@
 import SwiftUI
 
-/// Sidebar with a project file tree and recent files history.
+/// Sidebar with recent files history only.
 struct FileSidebar: View {
 
     @Binding var selectedURL: URL?
-    @State private var projectFiles: [FileNode] = []
     @State private var recentFiles: [URL] = FileHistory.load()
-
-    private let projectRoot = URL(fileURLWithPath: "/Users/douba/Projects/doupi")
 
     var body: some View {
         List(selection: $selectedURL) {
-            // ── Recent files ──
             if !recentFiles.isEmpty {
                 Section("最近打开") {
                     ForEach(recentFiles, id: \.self) { url in
@@ -24,21 +20,26 @@ struct FileSidebar: View {
                             }
                     }
                 }
-            }
-
-            // ── Project files ──
-            Section("项目文件") {
-                ForEach(projectFiles) { node in
-                    FileTreeRow(node: node, selectedURL: $selectedURL)
+            } else {
+                Section {
+                    VStack(spacing: 8) {
+                        Image(systemName: "arrow.down.doc")
+                            .font(.system(size: 28))
+                            .foregroundColor(.appMuted)
+                        Text("拖拽文件到此处预览")
+                            .font(.system(size: 12))
+                            .foregroundColor(.appMuted)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                    .listRowBackground(Color.clear)
                 }
             }
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200)
-        .onAppear { refreshProjectFiles() }
         .onChange(of: selectedURL) { _, newURL in
-            if let url = newURL {
-                FileHistory.add(url)
+            if let _ = newURL {
                 recentFiles = FileHistory.load()
             }
         }
@@ -46,51 +47,11 @@ struct FileSidebar: View {
 
     // MARK: - Helpers
 
-    private func refreshProjectFiles() {
-        Task {
-            let files = await Task.detached(priority: .userInitiated) {
-                FileNode.scan(self.projectRoot)
-            }.value
-            await MainActor.run {
-                self.projectFiles = files
-            }
-        }
-    }
-
     private func removeFromRecent(_ url: URL) {
         var urls = FileHistory.load()
         urls.removeAll { $0 == url }
         FileHistory.save(urls)
         recentFiles = urls
-    }
-}
-
-// MARK: - File Tree Row
-
-struct FileTreeRow: View {
-
-    let node: FileNode
-    @Binding var selectedURL: URL?
-    @State private var isExpanded = false
-
-    var body: some View {
-        if node.isDirectory {
-            DisclosureGroup(isExpanded: $isExpanded) {
-                if let children = node.children {
-                    ForEach(children) { child in
-                        FileTreeRow(node: child, selectedURL: $selectedURL)
-                    }
-                }
-            } label: {
-                Label(node.name, systemImage: isExpanded ? "folder.fill" : "folder")
-                    .font(.system(size: 13))
-                    .foregroundColor(.appText)
-            }
-        } else {
-            SidebarFileRow(url: node.url)
-                .tag(node.url)
-                .onTapGesture { selectedURL = node.url }
-        }
     }
 }
 

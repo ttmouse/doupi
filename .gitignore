@@ -5,4 +5,12 @@
 *.swo
 /build
 /tmp
-
+/.reasonix/
+/ai_sale.tsx
+/DoupiViewer.app/
+/DoupiViewer.app.bak/
+/.kun-canvas/
+/.tmp_*
+/tmp/
+node_modules/
+.vite/

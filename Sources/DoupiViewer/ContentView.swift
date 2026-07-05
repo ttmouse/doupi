@@ -178,6 +178,7 @@ struct ContentView: View {
         }
         fileURL = url
         fileInfo = info
+        FileHistory.add(url)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
