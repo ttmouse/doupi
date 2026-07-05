@@ -31,6 +31,7 @@ struct DocumentView: View {
             fileURL: info.url,
             readAccessRoot: readRoot
         )
+        .id(info.url)
     }
 
     // MARK: - TSX/JSX preview (compiled via esbuild -> file URL)
@@ -45,12 +46,14 @@ struct DocumentView: View {
     private var codeView: some View {
         let content = (try? String(contentsOf: info.url, encoding: .utf8)) ?? "// 无法读取文件内容"
         return CodeView(content: content, language: info.highlightLanguage)
+            .id(info.url)
     }
 
     // MARK: - Image
 
     private var imageView: some View {
         ImageView(url: info.url)
+            .id(info.url)
     }
 
     // MARK: - Plain text
@@ -66,6 +69,7 @@ struct DocumentView: View {
                 .textSelection(.enabled)
         }
         .background(Color.appBackground)
+        .id(info.url)
     }
 
     // MARK: - Unsupported
