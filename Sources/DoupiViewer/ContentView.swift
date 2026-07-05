@@ -178,10 +178,11 @@ struct ContentView: View {
             fileInfo = FileInfo.from(url: url)
             return
         }
+        let isNew = !FileHistory.contains(url)
         fileURL = url
         fileInfo = info
         FileHistory.add(url)
-        sidebarRefresh += 1
+        if isNew { sidebarRefresh += 1 }
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {

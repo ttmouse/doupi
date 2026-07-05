@@ -14,10 +14,14 @@ enum FileHistory {
 
     static func add(_ url: URL) {
         var urls = load()
-        urls.removeAll { $0 == url }
+        guard !urls.contains(url) else { return }  // already in history, don't reorder
         urls.insert(url, at: 0)
         if urls.count > maxItems { urls = Array(urls.prefix(maxItems)) }
         save(urls)
+    }
+
+    static func contains(_ url: URL) -> Bool {
+        load().contains(url)
     }
 
     static func save(_ urls: [URL]) {
