@@ -1,22 +1,27 @@
 import SwiftUI
 
-/// Design tokens for Doupi Viewer — warm paper background, green accent.
+/// Design tokens for Doupi Viewer — warm paper background, earthy green accent.
 extension Color {
 
     // MARK: - Backgrounds
     static let appBackground = Color(hex: "#f3f2ee")
-    static let appInfoBg     = Color(hex: "#e8e6e1")
-    static let appDropBg     = Color(hex: "#f0efe9")
+    static let appSurface     = Color(hex: "#ffffff")
+    static let appInfoBg      = Color(hex: "#e8e6e1")
+    static let appDropBg      = Color(hex: "#f0efe9")
 
     // MARK: - Accent
-    static let appAccent       = Color(hex: "#7BC043")
-    static let appAccentDeep   = Color(hex: "#4A7A23")
-    static let appAccentDimmed = Color(hex: "#7BC043").opacity(0.15)
+    static let appAccent       = Color(hex: "#5d9a32")
+    static let appAccentDeep   = Color(hex: "#3d6b1a")
+    static let appAccentDimmed = Color(hex: "#5d9a32").opacity(0.12)
+
+    // MARK: - Selection & hover
+    static let appSelectedBg = Color(hex: "#5d9a32").opacity(0.08)
+    static let appHoverBg    = Color.black.opacity(0.04)
 
     // MARK: - Foreground & border
     static let appText   = Color(hex: "#1d1d1f")
-    static let appMuted  = Color(hex: "#8a8885")
-    static let appBorder = Color(hex: "#d9d6d1")
+    static let appMuted  = Color(hex: "#787670")
+    static let appBorder = Color(hex: "#ccc8c2")
 
     // MARK: - Convenience initializer
     init(hex: String) {
@@ -43,8 +48,9 @@ extension Color {
 // MARK: - Font helpers
 
 extension Font {
-    static let appTitle = Font.system(size: 15, weight: .medium, design: .default)
-    static let appBody  = Font.system(size: 13, weight: .regular, design: .default)
-    static let appSmall = Font.system(size: 11, weight: .regular, design: .default)
-    static let appCode  = Font.system(size: 14, weight: .regular, design: .monospaced)
+    static let appDisplay = Font.system(size: 24, weight: .light, design: .default)
+    static let appTitle   = Font.system(size: 14, weight: .medium, design: .default)
+    static let appBody    = Font.system(size: 13, weight: .regular, design: .default)
+    static let appSmall   = Font.system(size: 11, weight: .medium, design: .default)
+    static let appCode    = Font.system(size: 14, weight: .regular, design: .monospaced)
 }

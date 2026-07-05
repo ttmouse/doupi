@@ -133,8 +133,8 @@ struct CodeView: NSViewRepresentable {
         body {
           background: transparent;
           font-family: -apple-system, "SF Mono", Menlo, Consolas, monospace;
-          font-size: 13px;
-          line-height: 1.5;
+          font-size: 14px;
+          line-height: 1.6;
           padding: 16px;
           color: #1d1d1f;
         }

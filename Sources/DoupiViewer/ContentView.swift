@@ -98,34 +98,34 @@ struct ContentView: View {
 
     private var dropZone: some View {
         VStack(spacing: 20) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.appAccent.opacity(isDragOver ? 0.6 : 0.25), lineWidth: 2)
-                    .shadow(color: Color.appAccent.opacity(isDragOver ? 0.4 : 0.15),
-                            radius: isDragOver ? 30 : 12)
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.appSurface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(isDragOver ? Color.appAccent : Color.appBorder, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(isDragOver ? 0.06 : 0.04),
+                        radius: isDragOver ? 16 : 12, y: 2)
+                .overlay {
+                    VStack(spacing: 14) {
+                        Image(systemName: "doc.viewfinder")
+                            .font(.system(size: 40, weight: .light))
+                            .foregroundColor(isDragOver ? .appAccent : .appMuted)
 
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.appAccentDimmed.opacity(isDragOver ? 0.25 : 0.08))
+                        Text("拖拽文件到此处\n或点击选择")
+                            .multilineTextAlignment(.center)
+                            .font(.appDisplay)
+                            .foregroundColor(.appText.opacity(0.8))
+                            .lineSpacing(6)
 
-                VStack(spacing: 14) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 44, weight: .light))
-                        .foregroundColor(.appAccent)
-
-                    Text("拖拽文件到此处\n或点击选择")
-                        .multilineTextAlignment(.center)
-                        .font(.system(size: 18, weight: .regular, design: .default))
-                        .foregroundColor(.appMuted)
-                        .lineSpacing(6)
-
-                    Text("支持 HTML / 代码 / 图片 / 文本")
-                        .font(.appSmall)
-                        .foregroundColor(.appMuted.opacity(0.6))
+                        Text("支持 HTML / 代码 / 图片 / 文本")
+                            .font(.appSmall)
+                            .foregroundColor(.appMuted)
+                    }
+                    .padding(40)
                 }
-                .padding(40)
-            }
-            .frame(width: 340, height: 260)
-            .onTapGesture { openFile() }
+                .frame(width: 360, height: 240)
+                .onTapGesture { openFile() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appDropBg)
@@ -150,41 +150,46 @@ struct ContentView: View {
     // MARK: - Info bar
 
     private var infoBar: some View {
-        HStack(spacing: 10) {
-            if let info = fileInfo {
-                Text(info.typeBadge)
-                    .font(.appSmall)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.appAccentDeep)
-                    .cornerRadius(4)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if let info = fileInfo {
+                    Text(info.typeBadge)
+                        .font(.appSmall)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.appAccentDeep)
+                        .cornerRadius(5)
 
-                Text(info.name)
-                    .font(.appTitle)
-                    .foregroundColor(.appText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    Text(info.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.appText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-                Spacer()
+                    Spacer()
 
-                Text(info.sizeFormatted)
-                    .font(.appSmall)
-                    .foregroundColor(.appMuted)
-
-                Button(action: closeFile) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                    Text(info.sizeFormatted)
+                        .font(.appSmall)
                         .foregroundColor(.appMuted)
+
+                    Button(action: closeFile) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.appMuted)
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭文件")
                 }
-                .buttonStyle(.plain)
-                .help("关闭文件")
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.appSurface)
+
+            Divider()
+                .overlay(Color.appBorder)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.appInfoBg)
     }
 
     // MARK: - Actions

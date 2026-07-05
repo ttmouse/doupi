@@ -116,7 +116,15 @@ struct PreviewCompiler {
             if fm.fileExists(atPath: dest.path) {
                 try fm.removeItem(at: dest)
             }
-            let data = try Data(contentsOf: source, options: [.mappedIfSafe])
+            // Use FileManager instead of Data(contentsOf:) — the latter checks sandbox
+            // entitlements that plain file URLs don't carry after app relaunch.
+            guard let data = fm.contents(atPath: source.path) else {
+                return .failure(PreviewBuildError(diagnostics: [PreviewDiagnostic(
+                    level: .error,
+                    message: "Cannot read source file: no data",
+                    file: source.path, line: nil
+                )]))
+            }
             try data.write(to: dest, options: [.atomic])
             try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dest.path)
         } catch {
