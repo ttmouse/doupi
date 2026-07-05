@@ -38,8 +38,14 @@ struct PreviewContainer: View {
                     .transition(.opacity)
             }
         }
-        .task {
+        .task(id: sourceURL) {
             await runPreviewPipeline()
+        }
+        .onChange(of: sourceURL) { _, _ in
+            // Reset state when source URL changes so the old preview
+            // doesn't flash while the new pipeline runs.
+            state = .idle
+            webError = nil
         }
         .onChange(of: webError) { _, newErr in
             if newErr != nil {

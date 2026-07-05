@@ -37,6 +37,7 @@ struct DocumentView: View {
 
     private var tsxPreviewView: some View {
         PreviewContainer(sourceURL: info.url)
+            .id(info.url)
     }
 
     // MARK: - Syntax-highlighted code
