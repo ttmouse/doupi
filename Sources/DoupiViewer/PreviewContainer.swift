@@ -83,12 +83,9 @@ struct PreviewContainer: View {
 
     private func previewWebView(indexHTMLURL: URL) -> some View {
         let workspaceURL = indexHTMLURL.deletingLastPathComponent()
-        // Use loadHTMLString with baseURL so ES module CDN imports (https://esm.sh) work.
-        // loadFileURL would block cross-origin ES module imports from file:// protocol.
-        let htmlContent = (try? String(contentsOf: indexHTMLURL, encoding: .utf8)) ?? "<h3>无法加载预览</h3>"
         return WebView(
-            htmlString: htmlContent,
-            baseURL: workspaceURL,
+            fileURL: indexHTMLURL,
+            readAccessRoot: workspaceURL,
             onNavigationError: { err in
                 webError = err
             }
