@@ -3,9 +3,10 @@ import WebKit
 
 /// A WKWebView wrapper supporting two loading modes:
 /// 1. HTML string (for code previews, inline content)
-/// 2. File URL (for HTML files and TSX build output — enables CSS/image loading)
+/// 2. File URL (for HTML files and TSX build output)
 ///
 /// Reports navigation errors via `onNavigationError` callback.
+/// Supports text search via JS injection (same `doupiSearch`/`doupiNavigate` API as CodeView).
 struct WebView: NSViewRepresentable {
 
     /// HTML string mode.
@@ -17,6 +18,11 @@ struct WebView: NSViewRepresentable {
     /// File URL mode: loads a local file with readAccessRoot for sibling resources.
     var fileURL: URL? = nil
     var readAccessRoot: URL? = nil
+
+    /// When non-nil, trigger JS search highlighting.
+    var searchQuery: String? = nil
+    /// Navigate between search matches.
+    var searchAction: SearchAction? = nil
 
     /// Called when a navigation error occurs (for webRuntimeError detection).
     var onNavigationError: ((String) -> Void)? = nil
@@ -37,24 +43,59 @@ struct WebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        // Load content
         if let fileURL = fileURL {
-            // File URL mode
             let key = fileURL.path
-            guard context.coordinator.lastLoadKey != key else { return }
-            context.coordinator.lastLoadKey = key
-            let root = readAccessRoot ?? fileURL.deletingLastPathComponent()
-            webView.loadFileURL(fileURL, allowingReadAccessTo: root)
+            if context.coordinator.lastLoadKey != key {
+                context.coordinator.lastLoadKey = key
+                context.coordinator.pageReady = false
+                let root = readAccessRoot ?? fileURL.deletingLastPathComponent()
+                webView.loadFileURL(fileURL, allowingReadAccessTo: root)
+            }
         } else if let htmlString = htmlString {
-            // HTML string mode
             let key = (baseURL?.path ?? "") + htmlString
-            guard context.coordinator.lastLoadKey != key else { return }
-            context.coordinator.lastLoadKey = key
-            webView.loadHTMLString(htmlString, baseURL: baseURL)
+            if context.coordinator.lastLoadKey != key {
+                context.coordinator.lastLoadKey = key
+                context.coordinator.pageReady = false
+                webView.loadHTMLString(htmlString, baseURL: baseURL)
+            }
+        }
+
+        // Apply search
+        if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
+            webView.evaluateJavaScript("doupiSearch('\(escapeJS(q))')") { result, _ in
+                if let json = result as? String,
+                   let data = json.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                    context.coordinator.matchCount = obj["count"] ?? 0
+                    context.coordinator.currentIdx = obj["current"] ?? 0
+                }
+            }
+        } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
+            webView.evaluateJavaScript("doupiSearch('')")
+            context.coordinator.matchCount = 0
+            context.coordinator.currentIdx = 0
+        }
+
+        // Handle navigation
+        switch searchAction {
+        case .next?:
+            webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
+                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+            }
+        case .prev?:
+            webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
+                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+            }
+        case nil: break
         }
     }
 
     class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoadKey: String = ""
+        var pageReady = false
+        var matchCount = 0
+        var currentIdx = 0
         let onNavigationError: ((String) -> Void)?
 
         init(onNavigationError: ((String) -> Void)?) {
@@ -72,5 +113,51 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             decisionHandler(.allow)
         }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.evaluateJavaScript(WebView.searchInjectionJS)
+            pageReady = true
+        }
+    }
+
+    /// JS injected into every page so doupiSearch/doupiNavigate work regardless of load mode.
+    private static let searchInjectionJS = """
+    (function() {
+      if (window._doupiInjected) return;
+      window._doupiInjected = true;
+      var s = document.createElement('style');
+      s.textContent = 'mark.doupi-search{background:rgba(93,154,50,0.35);color:inherit;border-radius:2px}mark.doupi-current{background:rgba(93,154,50,0.65);outline:1px solid rgba(93,154,50,0.8);border-radius:2px}';
+      document.head.appendChild(s);
+      window._doupiMatches=[];window._doupiCurrent=-1;
+      window.doupiSearch=function(q){
+        document.querySelectorAll('mark.doupi-search,mark.doupi-current').forEach(function(m){var p=m.parentNode;while(m.firstChild)p.insertBefore(m.firstChild,m);p.removeChild(m)});
+        window._doupiMatches=[];window._doupiCurrent=-1;
+        if(!q)return JSON.stringify({count:0,current:-1});
+        var w=document.createTreeWalker(document.body,4,null),ql=q.toLowerCase(),n,r;
+        while(n=w.nextNode()){var p=n.parentNode;if(p&&(p.nodeName==='MARK'||p.nodeName==='SCRIPT'||p.nodeName==='STYLE'))continue;
+        var t=n.textContent,i=t.toLowerCase().indexOf(ql);
+        if(i>=0){r=document.createRange();r.setStart(n,i);r.setEnd(n,i+q.length);
+        try{var mk=document.createElement('mark');mk.className='doupi-search';r.surroundContents(mk);window._doupiMatches.push(mk);w.currentNode=mk}catch(e){}}}
+        return JSON.stringify({count:window._doupiMatches.length,current:window._doupiCurrent});
+      };
+      window.doupiNavigate=function(d){
+        if(window._doupiMatches.length===0)return -1;
+        if(window._doupiCurrent>=0&&window._doupiCurrent<window._doupiMatches.length)window._doupiMatches[window._doupiCurrent].className='doupi-search';
+        window._doupiCurrent+=d;
+        if(window._doupiCurrent>=window._doupiMatches.length)window._doupiCurrent=0;
+        if(window._doupiCurrent<0)window._doupiCurrent=window._doupiMatches.length-1;
+        window._doupiMatches[window._doupiCurrent].className='doupi-current';
+        window._doupiMatches[window._doupiCurrent].scrollIntoView({behavior:'smooth',block:'center'});
+        return window._doupiCurrent;
+      };
+    })();
+    """
+
+    private func escapeJS(_ s: String) -> String {
+        s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 }

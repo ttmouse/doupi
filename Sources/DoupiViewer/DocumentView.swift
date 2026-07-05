@@ -5,6 +5,10 @@ struct DocumentView: View {
 
     let info: FileInfo
 
+    /// Passed through to WebView / CodeView for text search.
+    var searchQuery: String? = nil
+    var searchAction: SearchAction? = nil
+
     var body: some View {
         Group {
             if info.isHTML {
@@ -29,21 +33,26 @@ struct DocumentView: View {
         let readRoot = info.url.deletingLastPathComponent()
         return WebView(
             fileURL: info.url,
-            readAccessRoot: readRoot
+            readAccessRoot: readRoot,
+            searchQuery: searchQuery,
+            searchAction: searchAction
         )
     }
 
     // MARK: - TSX/JSX preview (compiled via esbuild -> file URL)
 
     private var tsxPreviewView: some View {
-        PreviewContainer(sourceURL: info.url)
+        PreviewContainer(sourceURL: info.url,
+                         searchQuery: searchQuery,
+                         searchAction: searchAction)
     }
 
     // MARK: - Syntax-highlighted code
 
     private var codeView: some View {
         let content = (try? String(contentsOf: info.url, encoding: .utf8)) ?? "// 无法读取文件内容"
-        return CodeView(content: content, language: info.highlightLanguage)
+        return CodeView(content: content, language: info.highlightLanguage,
+                        searchQuery: searchQuery, searchAction: searchAction)
     }
 
     // MARK: - Image

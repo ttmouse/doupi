@@ -11,6 +11,10 @@ struct ContentView: View {
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
 
+    // MARK: - Search
+
+    @State private var search = SearchState()
+
     // MARK: - Body
 
     var body: some View {
@@ -35,8 +39,23 @@ struct ContentView: View {
                     }
                 }
                 .overlay(alignment: .top) {
-                    if fileInfo != nil {
-                        infoBar
+                    VStack(spacing: 0) {
+                        if fileInfo != nil {
+                            infoBar
+                        }
+                        if search.isVisible {
+                            SearchBar(
+                                query: $search.query,
+                                matchCount: search.matchCount,
+                                currentMatch: search.currentMatch,
+                                onNext: { navigateSearch(1) },
+                                onPrev: { navigateSearch(-1) },
+                                onClose: { search.close() }
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 4)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
@@ -115,9 +134,17 @@ struct ContentView: View {
     // MARK: - Document area
 
     private func documentArea(info: FileInfo) -> some View {
-        DocumentView(info: info)
-            .id(info.id)
-            .padding(.top, 44)
+        let extraTop: CGFloat = search.isVisible ? 36 : 0
+        let action = search.pendingAction
+        // Clear the pending action so it's consumed exactly once
+        DispatchQueue.main.async { search.pendingAction = nil }
+        return DocumentView(
+            info: info,
+            searchQuery: search.isVisible ? search.query : nil,
+            searchAction: action
+        )
+        .id(info.id)
+        .padding(.top, 44 + extraTop)
     }
 
     // MARK: - Info bar
@@ -170,6 +197,7 @@ struct ContentView: View {
     private func closeFile() {
         fileURL = nil
         fileInfo = nil
+        search.close()
     }
 
     private func loadFile(url: URL) {
@@ -194,15 +222,46 @@ struct ContentView: View {
         return true
     }
 
+    // MARK: - Search navigation
+
+    private func navigateSearch(_ dir: Int) {
+        search.pendingAction = dir > 0 ? .next : .prev
+    }
+
     // MARK: - Keyboard shortcuts
 
     private func registerKeyboardShortcuts() -> Any? {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains(.command) && event.keyCode == 31 { // ⌘+O
+            // ⌘+F — open/focus search
+            if event.modifierFlags.contains(.command) && event.keyCode == 3 {
+                search.isVisible = true
+                search.query = ""
+                return nil
+            }
+            // ⌘+G — next match
+            if event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.shift) && event.keyCode == 5 {
+                if search.isVisible && !search.query.isEmpty { search.currentMatch = min(search.currentMatch + 1, max(search.matchCount - 1, 0)) }
+                navigateSearch(1)
+                return nil
+            }
+            // ⌘+⇧+G — previous match
+            if event.modifierFlags.contains(.command) && event.modifierFlags.contains(.shift) && event.keyCode == 5 {
+                if search.isVisible && !search.query.isEmpty { search.currentMatch = max(search.currentMatch - 1, 0) }
+                navigateSearch(-1)
+                return nil
+            }
+            // Esc — close search
+            if event.keyCode == 53 && search.isVisible {
+                search.close()
+                return nil
+            }
+            // ⌘+O — open file
+            if event.modifierFlags.contains(.command) && event.keyCode == 31 {
                 openFile()
                 return nil
             }
-            if event.modifierFlags.contains(.command) && event.keyCode == 13 { // ⌘+W
+            // ⌘+W — close file
+            if event.modifierFlags.contains(.command) && event.keyCode == 13 {
                 closeFile()
                 return nil
             }

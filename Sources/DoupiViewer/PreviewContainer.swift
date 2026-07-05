@@ -6,6 +6,10 @@ struct PreviewContainer: View {
 
     let sourceURL: URL
 
+    /// Search support propagated to inner WebView.
+    var searchQuery: String? = nil
+    var searchAction: SearchAction? = nil
+
     @State private var state: PreviewState = .idle
     @State private var esbuildPath: String?
     @State private var webError: String?
@@ -86,14 +90,14 @@ struct PreviewContainer: View {
         return WebView(
             fileURL: indexHTMLURL,
             readAccessRoot: workspaceURL,
+            searchQuery: searchQuery,
+            searchAction: searchAction,
             onNavigationError: { err in
                 webError = err
             }
         )
         .onChange(of: webError) { _, newErr in
-            if newErr != nil {
-                // Transition to show web runtime error
-            }
+            if newErr != nil { }
         }
     }
 
