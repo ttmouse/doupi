@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var isDragOver = false
     @State private var sidebarVisible = true
     @State private var eventMonitor: Any? = nil
+    @State private var sidebarRefresh = 0
 
     // MARK: - Body
 
@@ -16,7 +17,7 @@ struct ContentView: View {
         NavigationSplitView(
             sidebar: {
                 if sidebarVisible {
-                    FileSidebar(selectedURL: $fileURL)
+                    FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh)
                         .onChange(of: fileURL) { _, newURL in
                             guard let url = newURL else { return }
                             loadFile(url: url)
@@ -115,6 +116,7 @@ struct ContentView: View {
 
     private func documentArea(info: FileInfo) -> some View {
         DocumentView(info: info)
+            .id(info.id)
             .padding(.top, 44)
     }
 
@@ -179,6 +181,7 @@ struct ContentView: View {
         fileURL = url
         fileInfo = info
         FileHistory.add(url)
+        sidebarRefresh += 1
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {

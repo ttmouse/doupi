@@ -4,7 +4,8 @@ import SwiftUI
 struct FileSidebar: View {
 
     @Binding var selectedURL: URL?
-    @State private var recentFiles: [URL] = FileHistory.load()
+    var refreshToken: Int = 0
+    @State private var recentFiles: [URL] = []
 
     var body: some View {
         List(selection: $selectedURL) {
@@ -38,10 +39,11 @@ struct FileSidebar: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200)
-        .onChange(of: selectedURL) { _, newURL in
-            if let _ = newURL {
-                recentFiles = FileHistory.load()
-            }
+        .onAppear {
+            recentFiles = FileHistory.load()
+        }
+        .onChange(of: refreshToken) { _, _ in
+            recentFiles = FileHistory.load()
         }
     }
 
