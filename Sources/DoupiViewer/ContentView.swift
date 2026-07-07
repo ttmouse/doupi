@@ -9,7 +9,6 @@ struct ContentView: View {
     @State private var isDragOver = false
     @State private var sidebarVisible = true {
         didSet {
-            columnVisibility = sidebarVisible ? .automatic : .detailOnly
             if sidebarVisible {
                 // 延迟直到侧边栏渲染完成，然后激活搜索框
                 DispatchQueue.main.async {
@@ -18,7 +17,6 @@ struct ContentView: View {
             }
         }
     }
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
     @State private var sidebarFilterFocused = false
@@ -30,75 +28,61 @@ struct ContentView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationSplitView(
-            columnVisibility: $columnVisibility,
-            sidebar: {
+        HStack(spacing: 0) {
+            if sidebarVisible {
                 FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
+                    .frame(width: 240)
                     .background(Color.appInfoBg)
                     .preferredColorScheme(.light)
                     .onChange(of: fileURL) { _, newURL in
                         guard let url = newURL else { return }
                         loadFile(url: url)
                     }
-            },
-            detail: {
-                ZStack {
-                    Color.appBackground.ignoresSafeArea()
 
-                    if let info = fileInfo {
-                        VStack(spacing: 0) {
-                            if search.isVisible {
-                                SearchBar(
-                                    query: $search.query,
-                                    matchCount: search.matchCount,
-                                    currentMatch: search.currentMatch,
-                                    onNext: { navigateSearch(1) },
-                                    onPrev: { navigateSearch(-1) },
-                                    onClose: { search.close() }
-                                )
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 4)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                            }
+                Divider()
+                    .overlay(Color.appBorder)
+            }
 
-                            documentArea(info: info)
+            // Content area — width naturally excludes the sidebar when visible
+            ZStack {
+                Color.appBackground.ignoresSafeArea()
+
+                if let info = fileInfo {
+                    VStack(spacing: 0) {
+                        if search.isVisible {
+                            SearchBar(
+                                query: $search.query,
+                                matchCount: search.matchCount,
+                                currentMatch: search.currentMatch,
+                                onNext: { navigateSearch(1) },
+                                onPrev: { navigateSearch(-1) },
+                                onClose: { search.close() }
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 4)
+                            .transition(.move(edge: .top).combined(with: .opacity))
                         }
-                    } else {
-                        dropZone
+
+                        documentArea(info: info)
                     }
-                }
-                .toolbarRole(.editor)
-                .onDrop(of: [.fileURL], isTargeted: $isDragOver) { providers in
-                    handleDrop(providers)
-                }
-                .onAppear {
-                    eventMonitor = registerKeyboardShortcuts()
-                }
-                .onDisappear {
-                    if let monitor = eventMonitor {
-                        NSEvent.removeMonitor(monitor)
-                        eventMonitor = nil
-                    }
+                } else {
+                    dropZone
                 }
             }
-        )
-        .navigationSplitViewStyle(.balanced)
-    }
-
-    // MARK: - Sidebar toggle button
-
-    private var sidebarToggleButton: some View {
-        Button(action: { sidebarVisible.toggle() }) {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.appMuted)
-                .padding(6)
-                .background(Color.appInfoBg.opacity(0.8))
-                .cornerRadius(6)
+            .onDrop(of: [.fileURL], isTargeted: $isDragOver) { providers in
+                handleDrop(providers)
+            }
+            .onAppear {
+                eventMonitor = registerKeyboardShortcuts()
+            }
+            .onDisappear {
+                if let monitor = eventMonitor {
+                    NSEvent.removeMonitor(monitor)
+                    eventMonitor = nil
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .help(sidebarVisible ? "隐藏侧边栏" : "显示侧边栏")
-        .padding(8)
+        .animation(.easeInOut(duration: 0.2), value: sidebarVisible)
     }
 
     // MARK: - Drop zone
@@ -111,8 +95,6 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(isDragOver ? Color.appAccent : Color.appBorder, lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(isDragOver ? 0.06 : 0.04),
-                        radius: isDragOver ? 16 : 12, y: 2)
                 .overlay {
                     VStack(spacing: 14) {
                         Image(systemName: "doc.viewfinder")
@@ -290,7 +272,9 @@ struct ContentView: View {
             }
             // ⌘+B — toggle sidebar
             if event.modifierFlags.contains(.command) && event.keyCode == 11 {
-                sidebarVisible.toggle()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    sidebarVisible.toggle()
+                }
                 return nil
             }
             return event

@@ -35,12 +35,14 @@ struct MarkdownView: NSViewRepresentable {
 
         guard let md = try? String(contentsOf: url, encoding: .utf8) else { return }
 
-        let escaped = md
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "${", with: "\\${")
+        // Encode as JSON so it's a safe JS string literal — JSONEncoder properly escapes
+        // `\`, `"`, `\n`, `\t`, and crucially `/` → `\/` (preventing </script> injection).
+        let encoder = JSONEncoder()
+        guard let jsonData = try? encoder.encode(md),
+              let jsonString = String(data: jsonData, encoding: .utf8)
+        else { return }
 
-        let html = buildHTML(markdown: escaped)
+        let html = buildHTML(markdownJSON: jsonString)
         webView.loadHTMLString(html, baseURL: nil)
     }
 
@@ -61,7 +63,10 @@ struct MarkdownView: NSViewRepresentable {
 
     // MARK: - HTML builder
 
-    private func buildHTML(markdown: String) -> String {
+    /// Builds a self-contained HTML document.
+    /// - Parameter markdownJSON: The markdown content as a JSON-encoded string
+    ///   literal (double-quoted, properly escaped), ready to embed directly in JS.
+    private func buildHTML(markdownJSON: String) -> String {
         let markedJS = MarkdownView.loadMarkedJS()
 
         return """
@@ -86,7 +91,7 @@ struct MarkdownView: NSViewRepresentable {
         .markdown-body img{max-width:100%}.markdown-body hr{border:0;height:1px;background:#ccc8c2;margin:24px 0}
         </style></head><body><div class="markdown-body" id="content"></div>
         <script>\(markedJS)</script>
-        <script>document.getElementById('content').innerHTML=marked.parse(`\(markdown)`);</script>
+        <script>document.getElementById('content').innerHTML=marked.parse(\(markdownJSON));</script>
         </body></html>
         """
     }

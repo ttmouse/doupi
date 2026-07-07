@@ -65,6 +65,8 @@ struct FileSidebar: View {
     @State private var isSidebarHovered = false
     @State private var isFormatFilterExpanded = true
     @State private var isTagFilterExpanded = true
+    @State private var isFormatHeaderHovered = false
+    @State private var isTagHeaderHovered = false
 
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
@@ -172,15 +174,22 @@ struct FileSidebar: View {
                             Image(systemName: isFormatFilterExpanded ? "chevron.down" : "chevron.right")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundColor(.appMuted)
+                                .frame(width: 8)
                             Text("格式筛选")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.appMuted)
+                            Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 14)
-                        .padding(.top, 10)
-                        .padding(.bottom, 4)
+                        .padding(.vertical, 8)
+                        .background(isFormatHeaderHovered ? Color.appHoverBg : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .padding(.horizontal, 4)
                     }
                     .buttonStyle(.plain)
+                    .onHover { hovering in
+                        isFormatHeaderHovered = hovering
+                    }
 
                     if isFormatFilterExpanded {
                         FormatRow(
@@ -226,15 +235,22 @@ struct FileSidebar: View {
                             Image(systemName: isTagFilterExpanded ? "chevron.down" : "chevron.right")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundColor(.appMuted)
+                                .frame(width: 8)
                             Text("标签筛选")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.appMuted)
+                            Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 14)
-                        .padding(.top, 10)
-                        .padding(.bottom, 4)
+                        .padding(.vertical, 8)
+                        .background(isTagHeaderHovered ? Color.appHoverBg : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .padding(.horizontal, 4)
                     }
                     .buttonStyle(.plain)
+                    .onHover { hovering in
+                        isTagHeaderHovered = hovering
+                    }
 
                     if isTagFilterExpanded {
                         TagRow(
@@ -272,8 +288,9 @@ struct FileSidebar: View {
                 .id(tagVersion)
             }
 
-            Divider()
-                .overlay(Color.appBorder)
+            Rectangle()
+                .fill(Color.appBorder)
+                .frame(height: 0.5)
                 .padding(.bottom, 4)
 
             if !recentFiles.isEmpty {
@@ -354,7 +371,7 @@ struct FileSidebar: View {
         .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
         .overlay(
             RoundedRectangle(cornerRadius: 0)
-                .strokeBorder(isDropTargeted ? Color.appAccent : Color.clear, lineWidth: 2)
+                .strokeBorder(isDropTargeted ? Color.appAccent : Color.clear, lineWidth: 0.5)
         )
         .onHover { hovering in
             isSidebarHovered = hovering
@@ -464,7 +481,7 @@ private struct SidebarRow: View {
             .opacity(isPinned || isHovering ? 1 : 0)
             .scaleEffect(isPinned || isHovering ? 1 : 0.85, anchor: .trailing)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 7)
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 5)
@@ -540,7 +557,7 @@ private struct FormatRow: View {
                 .font(.system(size: 11))
                 .foregroundColor(.appMuted)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 5)
@@ -589,7 +606,7 @@ private struct TagRow: View {
                 .font(.system(size: 11))
                 .foregroundColor(.appMuted)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 5)
@@ -613,7 +630,7 @@ private struct TagRow: View {
 // MARK: - Sidebar Scroll View
 
 /// Width of the custom scrollbar indicator.
-private let sidebarScrollerWidth: CGFloat = 2
+private let sidebarScrollerWidth: CGFloat = 4
 
 /// AppKit-backed NSScrollView that replaces SwiftUI ScrollView for the sidebar
 /// file list.  Uses a hand-drawn 2 px overlay indicator instead of NSScroller

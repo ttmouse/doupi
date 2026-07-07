@@ -35,17 +35,19 @@ struct WebView: NSViewRepresentable {
         pref.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pref
 
-        // Inject transparent scrollbar via standard CSS (Safari 17+ supports scrollbar-color)
-        let scrollbarCSS = "*,*::before,*::after{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,0.25) transparent!important}"
+        // Inject CSS: color-scheme auto-adapt + thin transparent scrollbar
+        let scrollbarCSS = "*,*::before,*::after{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,0.3) transparent!important}:root{color-scheme:light dark!important}"
         let cssScript = WKUserScript(
             source: """
             (function(){
               var s=document.createElement('style');
               s.textContent='\(scrollbarCSS)';
               document.head.appendChild(s);
-              // Also watch for body/HTML background to prevent white track
-              var o=new MutationObserver(function(){document.documentElement.style.setProperty('scrollbar-color','rgba(128,128,128,0.25) transparent','important')});
-              o.observe(document.documentElement,{attributes:true,attributeFilter:['style','class']});
+              // Re-apply on DOM changes (SPA, dynamic content)
+              var o=new MutationObserver(function(){
+                document.documentElement.style.setProperty('scrollbar-color','rgba(128,128,128,0.3) transparent','important');
+              });
+              o.observe(document.body||document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
             })();
             """,
             injectionTime: .atDocumentEnd,
@@ -57,16 +59,25 @@ struct WebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         if #available(macOS 13.3, *) { webView.isInspectable = true }
-        // Transparent floating scrollbar via native overlay style
+        // Find the NSScrollView and force overlay scrollers + clear background
         if let scrollView = webView.subviews.first(where: { $0 is NSScrollView }) as? NSScrollView {
             scrollView.scrollerStyle = .overlay
             scrollView.drawsBackground = false
             scrollView.backgroundColor = .clear
+            // Also hide all potential background-drawing subviews
+            scrollView.subviews.forEach { sub in
+                if let v = sub as? NSView, v !== scrollView.contentView {
+                    v.layer?.backgroundColor = .clear
+                }
+            }
         }
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        // Always enforce transparent overlay scrollbar on the native NSScrollView
+        applyScrollbarStyle(webView)
+
         // Load content
         if let fileURL = fileURL {
             let key = fileURL.path
@@ -176,4 +187,12 @@ struct WebView: NSViewRepresentable {
       };
     })();
     """
+
+    /// Force transparent overlay scrollbar on the WKWebView's NSScrollView.
+    fileprivate func applyScrollbarStyle(_ webView: WKWebView) {
+        guard let scrollView = webView.subviews.first(where: { $0 is NSScrollView }) as? NSScrollView else { return }
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+    }
 }

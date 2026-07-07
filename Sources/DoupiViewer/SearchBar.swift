@@ -70,7 +70,6 @@ struct SearchBar: View {
         .padding(.vertical, 6)
         .background(Color.appInfoBg)
         .cornerRadius(8)
-        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
         .onAppear {
             localQuery = query
             isFocused = true
