@@ -9,19 +9,22 @@ enum FileHistory {
         guard let data = UserDefaults.standard.data(forKey: key),
               let urls = try? JSONDecoder().decode([URL].self, from: data)
         else { return [] }
-        return urls
+        // 标准化：将文件引用 URL（file:///.file/id=...）转为绝对路径
+        return urls.map { $0.standardizedFileURL }
     }
 
     static func add(_ url: URL) {
         var urls = load()
-        guard !urls.contains(url) else { return }  // already in history, don't reorder
-        urls.insert(url, at: 0)
+        let standard = url.standardizedFileURL
+        guard !urls.contains(standard) else { return }  // already in history, don't reorder
+        urls.insert(standard, at: 0)
         if urls.count > maxItems { urls = Array(urls.prefix(maxItems)) }
         save(urls)
     }
 
     static func contains(_ url: URL) -> Bool {
-        load().contains(url)
+        let standard = url.standardizedFileURL
+        return load().contains(standard)
     }
 
     static func save(_ urls: [URL]) {

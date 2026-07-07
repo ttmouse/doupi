@@ -12,10 +12,10 @@ enum FileDropDelegate {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 if let data = try? await provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) as? Data,
                    let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    return url
+                    return url.standardizedFileURL
                 }
                 if let url = try? await provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) as? URL {
-                    return url
+                    return url.standardizedFileURL
                 }
             }
         }
@@ -30,6 +30,6 @@ enum FileDropDelegate {
         panel.allowsMultipleSelection = false
         panel.title = "选择文件"
         panel.message = "选择要在 Doupi Viewer 中查看的文件"
-        return panel.runModal() == .OK ? panel.url : nil
+        return panel.runModal() == .OK ? panel.url?.standardizedFileURL : nil
     }
 }

@@ -16,3 +16,6 @@ node_modules/
 .vite/
 /AGENTS.md
 /Sources/DoupiApp.swift
+/reasonix.toml
+/.screenshot_sidebar.png
+/docs/

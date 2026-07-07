@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Sidebar with recent files history.
 struct FileSidebar: View {
@@ -7,6 +8,7 @@ struct FileSidebar: View {
     var refreshToken: Int = 0
     @State private var recentFiles: [URL] = []
     @State private var filterText = ""
+    @State private var isDropTargeted = false
     @FocusState private var isFilterFocused: Bool
 
     /// External binding to focus filter from ContentView keyboard shortcut.
@@ -86,7 +88,15 @@ struct FileSidebar: View {
                 Spacer()
             }
         }
-        .background(Color.appInfoBg)
+        .background(isDropTargeted ? Color.appAccent.opacity(0.08) : Color.appInfoBg)
+        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        .overlay(
+            RoundedRectangle(cornerRadius: 0)
+                .strokeBorder(isDropTargeted ? Color.appAccent : Color.clear, lineWidth: 2)
+        )
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers)
+        }
         .frame(minWidth: 200)
         .onAppear {
             recentFiles = FileHistory.load()
@@ -103,6 +113,20 @@ struct FileSidebar: View {
     }
 
     // MARK: - Helpers
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        Task {
+            if let url = await FileDropDelegate.handleDrop(providers) {
+                let standard = url.standardizedFileURL
+                FileHistory.add(standard)
+                await MainActor.run {
+                    recentFiles = FileHistory.load()
+                    selectedURL = standard
+                }
+            }
+        }
+        return true
+    }
 
     private func removeFromRecent(_ url: URL) {
         var urls = FileHistory.load()
