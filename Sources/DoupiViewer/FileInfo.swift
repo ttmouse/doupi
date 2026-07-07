@@ -20,11 +20,13 @@ struct FileInfo: Identifiable, Equatable {
         if isHTML { return "HTML" }
         if isCode { return ext.uppercased() }
         if isImage { return "IMG" }
+        if isPDF { return "PDF" }
         if ext.lowercased() == "txt" { return "TXT" }
+        if isMarkdown { return "MD" }
         return ext.uppercased()
     }
 
-    var isRenderable: Bool { isHTML || isCode || isImage || isText }
+    var isRenderable: Bool { isHTML || isMarkdown || isCode || isImage || isPDF || isText }
 
     // MARK: - Type checks
 
@@ -46,6 +48,12 @@ struct FileInfo: Identifiable, Equatable {
     }
 
     var isText: Bool { ext.lowercased() == "txt" }
+
+    var isPDF: Bool { ext.lowercased() == "pdf" }
+
+    var isMarkdown: Bool {
+        ["md", "markdown"].contains(ext.lowercased())
+    }
 
     /// highlight.js language class (or "plaintext").
     var highlightLanguage: String {

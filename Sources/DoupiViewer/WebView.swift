@@ -63,7 +63,7 @@ struct WebView: NSViewRepresentable {
 
         // Apply search
         if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
-            webView.evaluateJavaScript("doupiSearch('\(escapeJS(q))')") { result, _ in
+            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
                 if let json = result as? String,
                    let data = json.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
@@ -152,12 +152,4 @@ struct WebView: NSViewRepresentable {
       };
     })();
     """
-
-    private func escapeJS(_ s: String) -> String {
-        s
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-    }
 }

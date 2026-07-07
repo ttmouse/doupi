@@ -6,55 +6,99 @@ struct FileSidebar: View {
     @Binding var selectedURL: URL?
     var refreshToken: Int = 0
     @State private var recentFiles: [URL] = []
+    @State private var filterText = ""
+    @FocusState private var isFilterFocused: Bool
+
+    /// External binding to focus filter from ContentView keyboard shortcut.
+    var focusFilter: Binding<Bool>?
+
+    private var filteredFiles: [URL] {
+        filterText.isEmpty
+            ? recentFiles
+            : recentFiles.filter { $0.lastPathComponent.localizedCaseInsensitiveContains(filterText) }
+    }
 
     var body: some View {
-        ZStack {
-            Color.appInfoBg.ignoresSafeArea()
-            List(selection: $selectedURL) {
-                if !recentFiles.isEmpty {
-                    Section {
-                        ForEach(recentFiles, id: \.self) { url in
-                            SidebarFileRow(url: url, isSelected: selectedURL == url)
-                                .tag(url)
-                                .contextMenu {
-                                    Button("移除") {
-                                        removeFromRecent(url)
-                                    }
-                                }
-                                .listRowBackground(Color.clear)
-                        }
-                    } header: {
-                        Text("最近打开")
-                            .font(.appSmall)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.appMuted)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                } else {
-                    Section {
-                        VStack(spacing: 8) {
-                            Image(systemName: "tray")
-                                .font(.system(size: 24, weight: .light))
-                                .foregroundColor(.appMuted)
-                            Text("打开文件即可在此看到记录")
-                                .font(.system(size: 12))
+        VStack(spacing: 0) {
+            // Filter input
+            if !recentFiles.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.appMuted)
+                    TextField("筛选文件...", text: $filterText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.appText)
+                        .textFieldStyle(.plain)
+                        .focused($isFilterFocused)
+                    if !filterText.isEmpty {
+                        Button(action: { filterText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
                                 .foregroundColor(.appMuted)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
+                        .buttonStyle(.plain)
                     }
-                    .listRowBackground(Color.clear)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color.appBorder, lineWidth: 0.5)
+                )
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+
+            if !recentFiles.isEmpty {
+                SectionHeader("最近打开")
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+                    .padding(.bottom, 2)
+
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredFiles, id: \.self) { url in
+                            SidebarRow(url: url, isSelected: selectedURL == url) {
+                                selectedURL = url
+                            }
+                            .contextMenu {
+                                Button("移除") {
+                                    removeFromRecent(url)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundColor(.appMuted)
+                    Text("打开文件即可在此看到记录")
+                        .font(.system(size: 12))
+                        .foregroundColor(.appMuted)
+                }
+                Spacer()
+            }
         }
+        .background(Color.appInfoBg)
         .frame(minWidth: 200)
         .onAppear {
             recentFiles = FileHistory.load()
         }
         .onChange(of: refreshToken) { _, _ in
             recentFiles = FileHistory.load()
+        }
+        .onChange(of: focusFilter?.wrappedValue) { _, focused in
+            if focused == true {
+                isFilterFocused = true
+                focusFilter?.wrappedValue = false
+            }
         }
     }
 
@@ -65,38 +109,76 @@ struct FileSidebar: View {
         urls.removeAll { $0 == url }
         FileHistory.save(urls)
         recentFiles = urls
+        if selectedURL == url { selectedURL = nil }
     }
 }
 
-// MARK: - Sidebar File Row
+// MARK: - Section header
 
-struct SidebarFileRow: View {
+private struct SectionHeader: View {
+    let text: String
 
-    let url: URL
-    let isSelected: Bool
+    init(_ text: String) { self.text = text }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: iconName)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(isSelected ? .appAccent : .appMuted)
-                .frame(width: 18)
+        Text(text)
+            .font(.appSmall)
+            .fontWeight(.semibold)
+            .foregroundColor(.appMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
-            Text(url.lastPathComponent)
-                .font(.system(size: 13))
-                .foregroundColor(.appText)
-                .lineLimit(1)
-                .truncationMode(.middle)
+// MARK: - Sidebar Row (button-based, no NSTableView)
+
+private struct SidebarRow: View {
+    let url: URL
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(isSelected ? .appAccent : .appMuted)
+                    .frame(width: 18)
+
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13))
+                    .foregroundColor(.appText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(rowBackground)
+            )
+            .padding(.horizontal, 6)
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 
-    // MARK: - Helpers
+    private var rowBackground: Color {
+        if isSelected { return .appSelectedBg }
+        if isHovering { return .appHoverBg }
+        return .clear
+    }
 
     private var iconName: String {
         switch url.pathExtension.lowercased() {
         case "html", "htm":  return "globe"
         case "swift":        return "swift"
+        case "pdf":          return "doc.richtext"
         case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
         case "css", "scss", "less":  return "paintbrush"
         case "json":         return "curlybraces"

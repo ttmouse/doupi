@@ -35,43 +35,6 @@ enum PreviewState: Equatable {
     }
 }
 
-// MARK: - Error Types
-
-/// Three distinct error categories per the architecture spec.
-enum PreviewError: Error, LocalizedError, Equatable {
-    case runtime(RuntimeError)
-    case build(BuildError)
-    case webRuntime(WebRuntimeError)
-
-    var errorDescription: String? {
-        switch self {
-        case .runtime(let e): return e.message
-        case .build(let e): return e.message
-        case .webRuntime(let e): return e.message
-        }
-    }
-}
-
-struct RuntimeError: Error, LocalizedError, Equatable {
-    let message: String
-    var errorDescription: String? { message }
-}
-
-struct BuildError: Error, LocalizedError, Equatable {
-    let message: String
-    let stderr: String
-    let stdout: String
-    var errorDescription: String? { message }
-}
-
-struct WebRuntimeError: Error, LocalizedError, Equatable {
-    let message: String
-    let failingURL: String?
-    var errorDescription: String? { message }
-}
-
-// MARK: - Build Failure Wrapper (for Result<Success, Failure>)
-
 /// Wraps diagnostics in an Error-conforming type for use with Result.
 struct PreviewBuildError: Error, Equatable {
     let diagnostics: [PreviewDiagnostic]

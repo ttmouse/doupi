@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Drives search bar visibility and state across the app.
 @Observable

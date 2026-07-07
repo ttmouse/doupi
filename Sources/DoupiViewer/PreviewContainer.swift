@@ -51,12 +51,6 @@ struct PreviewContainer: View {
             state = .idle
             webError = nil
         }
-        .onChange(of: webError) { _, newErr in
-            if newErr != nil {
-                // If WebView reports error after successful build, update state
-                // but don't override buildSucceeded — the overlay handles display
-            }
-        }
     }
 
     // MARK: - Loading view
@@ -96,9 +90,6 @@ struct PreviewContainer: View {
                 webError = err
             }
         )
-        .onChange(of: webError) { _, newErr in
-            if newErr != nil { }
-        }
     }
 
     // MARK: - Pipeline

@@ -13,12 +13,16 @@ struct DocumentView: View {
         Group {
             if info.isHTML {
                 htmlView
+            } else if info.isMarkdown {
+                markdownView
             } else if info.isTSX {
                 tsxPreviewView
             } else if info.isCode {
                 codeView
             } else if info.isImage {
                 imageView
+            } else if info.isPDF {
+                pdfView
             } else if info.isText {
                 textView
             } else {
@@ -39,7 +43,15 @@ struct DocumentView: View {
         )
     }
 
-    // MARK: - TSX/JSX preview (compiled via esbuild -> file URL)
+    // MARK: - Markdown (rendered via inline marked.js)
+
+    private var markdownView: some View {
+        MarkdownView(url: info.url,
+                     searchQuery: searchQuery,
+                     searchAction: searchAction)
+    }
+
+    // MARK: - TSX/JSX preview
 
     private var tsxPreviewView: some View {
         PreviewContainer(sourceURL: info.url,
@@ -59,6 +71,12 @@ struct DocumentView: View {
 
     private var imageView: some View {
         ImageView(url: info.url)
+    }
+
+    // MARK: - PDF
+
+    private var pdfView: some View {
+        PDFViewer(url: info.url)
     }
 
     // MARK: - Plain text

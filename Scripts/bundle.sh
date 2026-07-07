@@ -35,9 +35,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>DoupiViewer</string>
+    <string>doupi</string>
     <key>CFBundleDisplayName</key>
-    <string>Doupi Viewer</string>
+    <string>doupi</string>
     <key>CFBundleIdentifier</key>
     <string>com.doupi.viewer</string>
     <key>CFBundleVersion</key>

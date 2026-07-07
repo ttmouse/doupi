@@ -9,9 +9,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.doupi.viewer</string>
 	<key>CFBundleName</key>
-	<string>Doupi Viewer</string>
+	<string>doupi</string>
 	<key>CFBundleDisplayName</key>
-	<string>Doupi Viewer</string>
+	<string>doupi</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -7,7 +7,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="DoupiViewer"
 BUNDLE_ID="com.doupi.viewer"
 
-echo "🔨 Building $APP_NAME..."
+echo "🔨 Building doupi..."
 cd "$PROJECT_DIR"
 swift build -c release
 

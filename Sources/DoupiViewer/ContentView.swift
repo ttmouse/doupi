@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var sidebarVisible = true
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
+    @State private var sidebarFilterFocused = false
 
     // MARK: - Search
 
@@ -21,7 +22,9 @@ struct ContentView: View {
         NavigationSplitView(
             sidebar: {
                 if sidebarVisible {
-                    FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh)
+                    FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
+                        .background(Color.appInfoBg)
+                        .preferredColorScheme(.light)
                         .onChange(of: fileURL) { _, newURL in
                             guard let url = newURL else { return }
                             loadFile(url: url)
@@ -33,29 +36,25 @@ struct ContentView: View {
                     Color.appBackground.ignoresSafeArea()
 
                     if let info = fileInfo {
-                        documentArea(info: info)
+                        VStack(spacing: 0) {
+                            if search.isVisible {
+                                SearchBar(
+                                    query: $search.query,
+                                    matchCount: search.matchCount,
+                                    currentMatch: search.currentMatch,
+                                    onNext: { navigateSearch(1) },
+                                    onPrev: { navigateSearch(-1) },
+                                    onClose: { search.close() }
+                                )
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 4)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+
+                            documentArea(info: info)
+                        }
                     } else {
                         dropZone
-                    }
-                }
-                .overlay(alignment: .top) {
-                    VStack(spacing: 0) {
-                        if fileInfo != nil {
-                            infoBar
-                        }
-                        if search.isVisible {
-                            SearchBar(
-                                query: $search.query,
-                                matchCount: search.matchCount,
-                                currentMatch: search.currentMatch,
-                                onNext: { navigateSearch(1) },
-                                onPrev: { navigateSearch(-1) },
-                                onClose: { search.close() }
-                            )
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 4)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
@@ -134,17 +133,16 @@ struct ContentView: View {
     // MARK: - Document area
 
     private func documentArea(info: FileInfo) -> some View {
-        let extraTop: CGFloat = search.isVisible ? 36 : 0
         let action = search.pendingAction
-        // Clear the pending action so it's consumed exactly once
-        DispatchQueue.main.async { search.pendingAction = nil }
         return DocumentView(
             info: info,
             searchQuery: search.isVisible ? search.query : nil,
             searchAction: action
         )
         .id(info.id)
-        .padding(.top, 44 + extraTop)
+        .onAppear {
+            search.pendingAction = nil
+        }
     }
 
     // MARK: - Info bar
@@ -237,6 +235,11 @@ struct ContentView: View {
 
     private func registerKeyboardShortcuts() -> Any? {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // ⌘+⇧+F — focus sidebar filter
+            if event.modifierFlags.contains(.command) && event.modifierFlags.contains(.shift) && event.keyCode == 3 {
+                sidebarFilterFocused = true
+                return nil
+            }
             // ⌘+F — open/focus search
             if event.modifierFlags.contains(.command) && event.keyCode == 3 {
                 search.isVisible = true
