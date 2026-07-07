@@ -21,7 +21,7 @@ enum FileFormat: String, CaseIterable, Hashable {
         case .image:    return "photo"
         case .pdf:      return "doc.richtext"
         case .text:     return "doc.plaintext"
-        case .tsx:      return "square.braces"
+        case .tsx:      return "curlybraces"
         }
     }
     static func `for`(_ url: URL) -> FileFormat? {
@@ -61,6 +61,7 @@ struct FileSidebar: View {
     @State private var showNewTagAlert = false
     @State private var newTagName = ""
     @State private var pendingTagURL: URL? = nil
+    @State private var isSidebarHovered = false
 
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
@@ -240,53 +241,43 @@ struct FileSidebar: View {
                 .padding(.bottom, 4)
 
             if !recentFiles.isEmpty {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(filteredFiles.enumerated()), id: \.offset) { idx, url in
-                            SidebarRow(url: url, isSelected: selectedURL == url, isKeyboardFocused: idx == keyboardFocusIndex) {
-                                selectedURL = url
-                            }
-                            .contextMenu {
-                                if !FileTags.allTags().isEmpty {
-                                    Menu("打标") {
-                                        ForEach(FileTags.allTags(), id: \.self) { tag in
-                                            let tagged = FileTags.tags(for: url).contains(tag)
-                                            Button {
-                                                FileTags.toggleTag(tag, for: url)
-                                                tagVersion = UUID()
-                                            } label: {
-                                                HStack {
-                                                    Text(tag)
-                                                    if tagged {
-                                                        Image(systemName: "checkmark")
-                                                    }
+                SidebarScrollView(content: VStack(spacing: 0) {
+                    ForEach(Array(filteredFiles.enumerated()), id: \.offset) { idx, url in
+                        SidebarRow(url: url, isSelected: selectedURL == url, isKeyboardFocused: idx == keyboardFocusIndex) {
+                            selectedURL = url
+                        }
+                        .contextMenu {
+                            if !FileTags.allTags().isEmpty {
+                                Menu("打标") {
+                                    ForEach(FileTags.allTags(), id: \.self) { tag in
+                                        let tagged = FileTags.tags(for: url).contains(tag)
+                                        Button {
+                                            FileTags.toggleTag(tag, for: url)
+                                            tagVersion = UUID()
+                                        } label: {
+                                            HStack {
+                                                Text(tag)
+                                                if tagged {
+                                                    Image(systemName: "checkmark")
                                                 }
                                             }
                                         }
                                     }
-                                    Divider()
-                                }
-                                Button("新建标签...") {
-                                    pendingTagURL = url
-                                    newTagName = ""
-                                    showNewTagAlert = true
                                 }
                                 Divider()
-                                Button("移除") {
-                                    removeFromRecent(url)
-                                }
+                            }
+                            Button("新建标签...") {
+                                pendingTagURL = url
+                                newTagName = ""
+                                showNewTagAlert = true
+                            }
+                            Divider()
+                            Button("移除") {
+                                removeFromRecent(url)
                             }
                         }
-
-                        // Hidden configurator inside the content so
-                        // enclosingScrollView finds the parent NSScrollView.
-                        Color.clear
-                            .frame(height: 0)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                            .background(ScrollbarConfigurator())
                     }
-                }
+                }, isHovered: isSidebarHovered)
             } else {
                 Spacer()
                 VStack(spacing: 8) {
@@ -306,6 +297,9 @@ struct FileSidebar: View {
             RoundedRectangle(cornerRadius: 0)
                 .strokeBorder(isDropTargeted ? Color.appAccent : Color.clear, lineWidth: 2)
         )
+        .onHover { hovering in
+            isSidebarHovered = hovering
+        }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }
@@ -531,100 +525,79 @@ private struct TagRow: View {
     }
 }
 
-// MARK: - Scrollbar Style
+// MARK: - Sidebar Scroll View
 
-/// Target scroller knob width (≈ 2 px, half of the previous 4 px).
+/// Thin scroller width (≈ 2 px).
 private let sidebarScrollerWidth: CGFloat = 2
 
-/// Custom scroller that clamps its width by intercepting `setFrameSize`,
-/// which the system calls during every `tile()`.  This is the most reliable
-/// way to keep overlay scrollers narrow on modern macOS.
-private final class NarrowSidebarScroller: NSScroller {
-    override func setFrameSize(_ newSize: NSSize) {
-        var size = newSize
-        if size.width > sidebarScrollerWidth + 0.5 {
-            size.width = sidebarScrollerWidth
-        }
-        super.setFrameSize(size)
-    }
-}
+/// AppKit-backed NSScrollView that replaces SwiftUI ScrollView for the sidebar
+/// file list — gives full control over scroller width.  Hover state is driven
+/// from the parent SwiftUI view via onHover so the scroller appears when the
+/// mouse is anywhere over the sidebar, not just over the scroll area.
+private struct SidebarScrollView<Content: View>: NSViewRepresentable {
+    let content: Content
+    let isHovered: Bool
 
-/// Placed inside the ScrollView content so `enclosingScrollView` can find
-/// the parent NSScrollView. Styles it as ultra-thin overlay scrollers that
-/// are invisible until hover / scroll activity.
-private struct ScrollbarConfigurator: NSViewRepresentable {
-
-    func makeNSView(context: Context) -> NSView {
-        ConfigView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        // styling is applied in ConfigView.viewDidMoveToSuperview
-    }
-}
-
-/// Custom NSView that configures the parent NSScrollView as soon as it
-/// is attached to the view hierarchy, and tracks mouse hover to
-/// show/hide scrollers.
-private final class ConfigView: NSView {
-    private weak var scrollView: NSScrollView?
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        applyStyle()
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        guard let sv = scrollView else { return }
-        // Remove stale tracking areas owned by us
-        for area in sv.trackingAreas where area.owner === self {
-            sv.removeTrackingArea(area)
-        }
-        let area = NSTrackingArea(
-            rect: sv.bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        sv.addTrackingArea(area)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            scrollView?.verticalScroller?.animator().alphaValue = 1
-            scrollView?.horizontalScroller?.animator().alphaValue = 1
-        }
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.3
-            scrollView?.verticalScroller?.animator().alphaValue = 0
-            scrollView?.horizontalScroller?.animator().alphaValue = 0
-        }
-    }
-
-    private func applyStyle() {
-        guard let sv = enclosingScrollView else { return }
-        scrollView = sv
+    func makeNSView(context: Context) -> NSScrollView {
+        let sv = NSScrollView()
         sv.scrollerStyle = .overlay
+        sv.drawsBackground = false
+        sv.hasVerticalScroller = true
+        sv.hasHorizontalScroller = false
+        sv.autohidesScrollers = false
 
-        // Replace default scrollers with narrow ones that clamp width.
-        let makeNarrow: (NSScroller?) -> NarrowSidebarScroller = { old in
-            let narrow = NarrowSidebarScroller()
-            if let old {
-                narrow.frame = old.frame
-                narrow.autoresizingMask = old.autoresizingMask
+        // Narrow vertical scroller, hidden by default
+        let vs = NSScroller()
+        vs.controlSize = .mini
+        vs.alphaValue = 0
+        sv.verticalScroller = vs
+
+        // Host SwiftUI content inside the scroll view
+        let host = NSHostingView(rootView: content)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        sv.documentView = host
+
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(equalTo: sv.contentView.topAnchor),
+            host.leadingAnchor.constraint(equalTo: sv.contentView.leadingAnchor),
+            host.widthAnchor.constraint(equalTo: sv.contentView.widthAnchor),
+        ])
+
+        context.coordinator.scrollView = sv
+        return sv
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        if let host = nsView.documentView as? NSHostingView<Content> {
+            host.rootView = content
+        }
+        context.coordinator.setScrollerVisible(isHovered)
+        context.coordinator.forceNarrow()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject {
+        weak var scrollView: NSScrollView?
+
+        func setScrollerVisible(_ visible: Bool) {
+            let targetAlpha: CGFloat = visible ? 1 : 0
+            guard scrollView?.verticalScroller?.alphaValue != targetAlpha else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = visible ? 0.15 : 0.3
+                scrollView?.verticalScroller?.animator().alphaValue = targetAlpha
             }
-            narrow.controlSize = .small
-            narrow.alphaValue = 0  // hidden by default, shown on hover
-            return narrow
         }
 
-        sv.verticalScroller = makeNarrow(sv.verticalScroller)
-        sv.horizontalScroller = makeNarrow(sv.horizontalScroller)
-        sv.tile()
+        func forceNarrow() {
+            guard let sv = scrollView else { return }
+            if let vs = sv.verticalScroller, vs.frame.width > sidebarScrollerWidth + 0.5 {
+                var f = vs.frame
+                f.size.width = sidebarScrollerWidth
+                vs.frame = f
+            }
+        }
     }
 }

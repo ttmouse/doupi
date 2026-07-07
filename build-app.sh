@@ -9,7 +9,7 @@ BUNDLE_ID="com.doupi.viewer"
 
 echo "🔨 Building doupi..."
 cd "$PROJECT_DIR"
-swift build -c release
+swift build -c release --disable-sandbox
 
 BINARY="$PROJECT_DIR/.build/release/$APP_NAME"
 APP_BUNDLE="$PROJECT_DIR/.build/release/$APP_NAME.app"
