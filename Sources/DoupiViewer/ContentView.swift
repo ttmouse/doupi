@@ -195,8 +195,11 @@ struct ContentView: View {
     // MARK: - Actions
 
     private func openFile() {
-        guard let url = FileDropDelegate.openPanel() else { return }
-        loadFile(url: url)
+        let urls = FileDropDelegate.openPanel()
+        guard !urls.isEmpty else { return }
+        FileHistory.bulkAdd(urls)
+        sidebarRefresh += 1
+        loadFile(url: urls[0])
     }
 
     private func closeFile() {
@@ -220,8 +223,12 @@ struct ContentView: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         Task {
-            if let url = await FileDropDelegate.handleDrop(providers) {
-                await MainActor.run { loadFile(url: url) }
+            let urls = await FileDropDelegate.collectRenderableFiles(from: providers)
+            guard !urls.isEmpty else { return }
+            FileHistory.bulkAdd(urls)
+            await MainActor.run {
+                sidebarRefresh += 1
+                loadFile(url: urls[0])
             }
         }
         return true

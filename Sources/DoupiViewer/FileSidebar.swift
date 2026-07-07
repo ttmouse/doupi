@@ -118,13 +118,12 @@ struct FileSidebar: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         Task {
-            if let url = await FileDropDelegate.handleDrop(providers) {
-                let standard = url.standardizedFileURL
-                FileHistory.add(standard)
-                await MainActor.run {
-                    recentFiles = FileHistory.load()
-                    selectedURL = standard
-                }
+            let urls = await FileDropDelegate.collectRenderableFiles(from: providers)
+            guard !urls.isEmpty else { return }
+            FileHistory.bulkAdd(urls)
+            await MainActor.run {
+                recentFiles = FileHistory.load()
+                selectedURL = urls[0]
             }
         }
         return true

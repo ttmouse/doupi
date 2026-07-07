@@ -19,6 +19,15 @@ enum FileHistory {
         save(urls)
     }
 
+    /// Add multiple new URLs at the front, preserving input order.
+    static func bulkAdd(_ urls: [URL]) {
+        var existing = load()
+        let newUrls = urls.map { $0.standardizedFileURL }.filter { !existing.contains($0) }
+        guard !newUrls.isEmpty else { return }
+        existing.insert(contentsOf: newUrls, at: 0)
+        save(existing)
+    }
+
     static func contains(_ url: URL) -> Bool {
         let standard = url.standardizedFileURL
         return load().contains(standard)
