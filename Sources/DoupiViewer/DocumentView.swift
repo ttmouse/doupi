@@ -41,6 +41,7 @@ struct DocumentView: View {
             searchQuery: searchQuery,
             searchAction: searchAction
         )
+        .ignoresSafeArea()
     }
 
     // MARK: - Markdown (rendered via inline marked.js)
@@ -49,6 +50,7 @@ struct DocumentView: View {
         MarkdownView(url: info.url,
                      searchQuery: searchQuery,
                      searchAction: searchAction)
+        .ignoresSafeArea()
     }
 
     // MARK: - TSX/JSX preview
@@ -57,6 +59,7 @@ struct DocumentView: View {
         PreviewContainer(sourceURL: info.url,
                          searchQuery: searchQuery,
                          searchAction: searchAction)
+        .ignoresSafeArea()
     }
 
     // MARK: - Syntax-highlighted code

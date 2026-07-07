@@ -56,25 +56,27 @@ struct FileSidebar: View {
             }
 
             if !recentFiles.isEmpty {
-                SectionHeader("最近打开")
-                    .padding(.horizontal, 14)
-                    .padding(.top, 4)
-                    .padding(.bottom, 2)
-
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredFiles, id: \.self) { url in
-                            SidebarRow(url: url, isSelected: selectedURL == url) {
-                                selectedURL = url
-                            }
-                            .contextMenu {
-                                Button("移除") {
-                                    removeFromRecent(url)
-                                }
+                List {
+                    ForEach(filteredFiles, id: \.self) { url in
+                        SidebarRow(url: url, isSelected: selectedURL == url) {
+                            selectedURL = url
+                        }
+                        .contextMenu {
+                            Button("移除") {
+                                removeFromRecent(url)
                             }
                         }
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                    }
+                    .onMove { source, destination in
+                        var items = recentFiles
+                        items.move(fromOffsets: source, toOffset: destination)
+                        recentFiles = items
+                        FileHistory.save(items)
                     }
                 }
+                .listStyle(.plain)
             } else {
                 Spacer()
                 VStack(spacing: 8) {
@@ -137,23 +139,7 @@ struct FileSidebar: View {
     }
 }
 
-// MARK: - Section header
-
-private struct SectionHeader: View {
-    let text: String
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(.appSmall)
-            .fontWeight(.semibold)
-            .foregroundColor(.appMuted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Sidebar Row (button-based, no NSTableView)
+// MARK: - Sidebar Row
 
 private struct SidebarRow: View {
     let url: URL
@@ -163,30 +149,29 @@ private struct SidebarRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: iconName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(isSelected ? .appAccent : .appMuted)
-                    .frame(width: 18)
+        HStack(spacing: 8) {
+            Image(systemName: iconName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(isSelected ? .appAccent : .appMuted)
+                .frame(width: 18)
 
-                Text(url.lastPathComponent)
-                    .font(.system(size: 13))
-                    .foregroundColor(.appText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            Text(url.lastPathComponent)
+                .font(.system(size: 13))
+                .foregroundColor(.appText)
+                .lineLimit(1)
+                .truncationMode(.middle)
 
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(rowBackground)
-            )
-            .padding(.horizontal, 6)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(rowBackground)
+        )
+        .padding(.horizontal, 6)
+        .contentShape(Rectangle())
+        .onTapGesture { action() }
         .onHover { hovering in
             isHovering = hovering
         }

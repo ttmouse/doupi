@@ -57,6 +57,8 @@ struct ContentView: View {
                         dropZone
                     }
                 }
+                .toolbarRole(.editor)
+                .toolbar(.hidden)
                 .overlay(alignment: .bottomTrailing) {
                     sidebarToggleButton
                 }
