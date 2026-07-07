@@ -10,6 +10,7 @@ struct FileSidebar: View {
     @State private var filterText = ""
     @State private var isDropTargeted = false
     @FocusState private var isFilterFocused: Bool
+    @State private var keyboardFocusIndex: Int = 0
 
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
@@ -22,6 +23,23 @@ struct FileSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Visual header — actual dragging handled by the
+            // full-width transparent strip in ContentView.
+            HStack(spacing: 6) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.appMuted)
+                Text("豆皮")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.appMuted.opacity(0.7))
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 28)
+
+            Divider()
+                .overlay(Color.appBorder)
+
             // Filter input
             if !recentFiles.isEmpty {
                 HStack(spacing: 6) {
@@ -33,6 +51,28 @@ struct FileSidebar: View {
                         .foregroundColor(.appText)
                         .textFieldStyle(.plain)
                         .focused($isFilterFocused)
+                        .onKeyPress(phases: .down) { press in
+                            let list = filteredFiles
+                            guard !list.isEmpty else { return .ignored }
+                            switch press.key {
+                            case .downArrow:
+                                if keyboardFocusIndex < list.count - 1 {
+                                    keyboardFocusIndex += 1
+                                }
+                                return .handled
+                            case .upArrow:
+                                if keyboardFocusIndex > 0 {
+                                    keyboardFocusIndex -= 1
+                                }
+                                return .handled
+                            case .return:
+                                let idx = min(keyboardFocusIndex, list.count - 1)
+                                selectedURL = list[idx]
+                                return .handled
+                            default:
+                                return .ignored
+                            }
+                        }
                     if !filterText.isEmpty {
                         Button(action: { filterText = "" }) {
                             Image(systemName: "xmark.circle.fill")
@@ -57,8 +97,8 @@ struct FileSidebar: View {
 
             if !recentFiles.isEmpty {
                 List {
-                    ForEach(filteredFiles, id: \.self) { url in
-                        SidebarRow(url: url, isSelected: selectedURL == url) {
+                    ForEach(Array(filteredFiles.enumerated()), id: \.offset) { idx, url in
+                        SidebarRow(url: url, isSelected: selectedURL == url, isKeyboardFocused: idx == keyboardFocusIndex) {
                             selectedURL = url
                         }
                         .contextMenu {
@@ -106,6 +146,9 @@ struct FileSidebar: View {
         .onChange(of: refreshToken) { _, _ in
             recentFiles = FileHistory.load()
         }
+        .onChange(of: filterText) { _, _ in
+            keyboardFocusIndex = 0
+        }
         .onChange(of: focusFilter?.wrappedValue) { _, focused in
             if focused == true {
                 isFilterFocused = true
@@ -143,6 +186,7 @@ struct FileSidebar: View {
 private struct SidebarRow: View {
     let url: URL
     let isSelected: Bool
+    let isKeyboardFocused: Bool
     let action: () -> Void
 
     @State private var isHovering = false
@@ -178,7 +222,8 @@ private struct SidebarRow: View {
 
     private var rowBackground: Color {
         if isSelected { return .appSelectedBg }
-        if isHovering { return .appHoverBg }
+        if isKeyboardFocused { return .appHoverBg }
+        if isHovering { return .appHoverBg.opacity(0.6) }
         return .clear
     }
 

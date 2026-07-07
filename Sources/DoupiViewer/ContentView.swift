@@ -7,7 +7,18 @@ struct ContentView: View {
     @State private var fileURL: URL?
     @State private var fileInfo: FileInfo?
     @State private var isDragOver = false
-    @State private var sidebarVisible = true
+    @State private var sidebarVisible = true {
+        didSet {
+            columnVisibility = sidebarVisible ? .automatic : .detailOnly
+            if sidebarVisible {
+                // 延迟直到侧边栏渲染完成，然后激活搜索框
+                DispatchQueue.main.async {
+                    sidebarFilterFocused = true
+                }
+            }
+        }
+    }
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
     @State private var sidebarFilterFocused = false
@@ -20,16 +31,15 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(
+            columnVisibility: $columnVisibility,
             sidebar: {
-                if sidebarVisible {
-                    FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
-                        .background(Color.appInfoBg)
-                        .preferredColorScheme(.light)
-                        .onChange(of: fileURL) { _, newURL in
-                            guard let url = newURL else { return }
-                            loadFile(url: url)
-                        }
-                }
+                FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
+                    .background(Color.appInfoBg)
+                    .preferredColorScheme(.light)
+                    .onChange(of: fileURL) { _, newURL in
+                        guard let url = newURL else { return }
+                        loadFile(url: url)
+                    }
             },
             detail: {
                 ZStack {
@@ -58,10 +68,6 @@ struct ContentView: View {
                     }
                 }
                 .toolbarRole(.editor)
-                .toolbar(.hidden)
-                .overlay(alignment: .bottomTrailing) {
-                    sidebarToggleButton
-                }
                 .onDrop(of: [.fileURL], isTargeted: $isDragOver) { providers in
                     handleDrop(providers)
                 }
@@ -280,6 +286,11 @@ struct ContentView: View {
             // ⌘+W — close file
             if event.modifierFlags.contains(.command) && event.keyCode == 13 {
                 closeFile()
+                return nil
+            }
+            // ⌘+B — toggle sidebar
+            if event.modifierFlags.contains(.command) && event.keyCode == 11 {
+                sidebarVisible.toggle()
                 return nil
             }
             return event
