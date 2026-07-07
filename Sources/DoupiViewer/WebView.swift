@@ -35,10 +35,34 @@ struct WebView: NSViewRepresentable {
         pref.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pref
 
+        // Inject transparent scrollbar via standard CSS (Safari 17+ supports scrollbar-color)
+        let scrollbarCSS = "*,*::before,*::after{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,0.25) transparent!important}"
+        let cssScript = WKUserScript(
+            source: """
+            (function(){
+              var s=document.createElement('style');
+              s.textContent='\(scrollbarCSS)';
+              document.head.appendChild(s);
+              // Also watch for body/HTML background to prevent white track
+              var o=new MutationObserver(function(){document.documentElement.style.setProperty('scrollbar-color','rgba(128,128,128,0.25) transparent','important')});
+              o.observe(document.documentElement,{attributes:true,attributeFilter:['style','class']});
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(cssScript)
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         if #available(macOS 13.3, *) { webView.isInspectable = true }
+        // Transparent floating scrollbar via native overlay style
+        if let scrollView = webView.subviews.first(where: { $0 is NSScrollView }) as? NSScrollView {
+            scrollView.scrollerStyle = .overlay
+            scrollView.drawsBackground = false
+            scrollView.backgroundColor = .clear
+        }
         return webView
     }
 

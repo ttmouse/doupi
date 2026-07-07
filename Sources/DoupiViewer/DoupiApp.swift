@@ -49,18 +49,17 @@ private struct WindowAccessor: NSViewRepresentable {
         window.toolbarStyle = .unified
     }
 
-    /// Adds an invisible 24pt strip at the top of the window's content area
-    /// that handles window dragging via performDrag(with:).
+    /// Installs an invisible 24pt drag strip at the top of the window.
     ///
-    /// Uses two mechanisms so dragging works even when child views (e.g. WKWebView)
-    /// cover the drag strip:
-    ///  1. An NSView subview kept on top of the layer hierarchy (cursor + autoresize).
-    ///  2. An NSEvent monitor that catches leftMouseDown in the top zone regardless
-    ///     of which view is hit-tested first.
+    /// Uses an NSEvent monitor to intercept leftMouseDown in the top zone
+    /// **before** any view's hitTest runs (WKWebView cannot block it).
+    /// The event is then forwarded to a dedicated NSView whose `mouseDown`
+    /// calls the native `performDrag(with:)` for smooth window dragging.
     private func installDragHandle(on window: NSWindow) {
         guard let contentView = window.contentView else { return }
 
-        // 1. Invisible subview for cursor tracking and autoresizing.
+        // Thin subview that receives the forwarded event and calls performDrag.
+        // Also provides cursor feedback via tracking areas.
         let dragView = WindowDragView(
             frame: NSRect(x: 0,
                           y: contentView.bounds.height - 24,
@@ -70,14 +69,20 @@ private struct WindowAccessor: NSViewRepresentable {
         dragView.autoresizingMask = [.width, .minYMargin]
         contentView.addSubview(dragView)
 
-        // 2. Event monitor — fires before any view's hitTest.
+        // Event monitor — fires before hitTest, so WKWebView never sees the event.
         let monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             guard event.window == window,
                   let cv = window.contentView,
                   event.locationInWindow.y >= cv.bounds.height - 24
             else { return event }
-            window.performDrag(with: event)
-            return nil
+
+            // Forward to our drag view so the native performDrag handles the
+            // entire drag natively (smooth, no jitter).
+            if let dv = cv.subviews.first(where: { $0 is WindowDragView }) {
+                dv.mouseDown(with: event)
+            }
+
+            return nil  // prevent dispatch to WKWebView / other views
         }
 
         // Keep the monitor alive by associating it with the window.
@@ -90,26 +95,25 @@ private struct WindowAccessor: NSViewRepresentable {
     }
 }
 
-/// Key used to associate the event monitor with the window.
+// MARK: - Private helpers
+
 private var dragMonitorKey: UInt8 = 0
 
-// MARK: - Drag handle NSView
-
-/// A transparent NSView that initiates window dragging on mouseDown.
+/// Transparent NSView that uses `performDrag(with:)` for native smooth window
+/// dragging, and shows `openHand` cursor on hover.
 private final class WindowDragView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        // Layer-backed so it stays visually on top.
         wantsLayer = true
-        layer?.backgroundColor = nil  // fully transparent
+        layer?.backgroundColor = nil
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var mouseDownCanMoveWindow: Bool { false }
+    // MARK: - Drag (called from the event monitor)
 
     override func mouseDown(with event: NSEvent) {
         window?.performDrag(with: event)
