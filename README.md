@@ -11,6 +11,9 @@
 
 ## 概述
 
+<img width="3272" height="2036" alt="image" src="https://github.com/user-attachments/assets/8b62ade6-de35-4ab0-9604-30eaaaf99b3b" />
+
+
 doupi 是一个 macOS 原生文件查看器。拖拽文件到窗口（或通过 ⌘+O 打开），自动识别文件类型并选择合适的预览器渲染。
 
 ### 支持的文件类型
