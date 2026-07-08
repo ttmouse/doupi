@@ -24,47 +24,24 @@ struct MarkdownView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         if #available(macOS 13.3, *) { webView.isInspectable = true }
+        context.coordinator.webView = webView
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         let key = url.path
         guard context.coordinator.lastLoadKey != key else {
-            applySearchIfReady(webView, context: context)
+            // Store latest search query and try to apply
+            context.coordinator.pendingSearchQuery = searchQuery
+            context.coordinator.pendingOnUpdate = onSearchUpdate
+            context.coordinator.applySearchIfReady()
             return
         }
         context.coordinator.lastLoadKey = key
         context.coordinator.pageReady = false
+        context.coordinator.pendingSearchQuery = searchQuery
+        context.coordinator.pendingOnUpdate = onSearchUpdate
         context.coordinator.scheduleLoad(url: url, webView: webView)
-    }
-
-    private func applySearchIfReady(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.pageReady else { return }
-        let onUpdate = onSearchUpdate
-        if let q = searchQuery, !q.isEmpty {
-            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                if let json = result as? String,
-                   let data = json.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                }
-            }
-        } else if searchQuery?.isEmpty != false {
-            webView.evaluateJavaScript("doupiSearch('')")
-            onUpdate?(0, 0)
-        }
-
-        switch searchAction {
-        case .next?:
-            webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
-                if let idx = result as? Int { onUpdate?(context.coordinator.matchCount, idx) }
-            }
-        case .prev?:
-            webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
-                if let idx = result as? Int { onUpdate?(context.coordinator.matchCount, idx) }
-            }
-        case nil: break
-        }
     }
 
     // MARK: - HTML builder
@@ -118,6 +95,9 @@ struct MarkdownView: NSViewRepresentable {
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
+        var pendingSearchQuery: String? = nil
+        var pendingOnUpdate: ((Int, Int) -> Void)? = nil
+        weak var webView: WKWebView?
         let searchAction: SearchAction?
         private var loadTask: Task<Void, Never>?
 
@@ -156,6 +136,26 @@ struct MarkdownView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(MarkdownView.searchJS)
             pageReady = true
+            applySearchIfReady()
+        }
+
+        /// Try to execute the pending search query.
+        func applySearchIfReady() {
+            guard pageReady, let wv = webView else { return }
+            let onUpdate = pendingOnUpdate
+
+            if let q = pendingSearchQuery, !q.isEmpty {
+                wv.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
+                    if let json = result as? String,
+                       let data = json.data(using: .utf8),
+                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                        onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                    }
+                }
+            } else if pendingSearchQuery?.isEmpty != false {
+                wv.evaluateJavaScript("doupiSearch('')")
+                onUpdate?(0, 0)
+            }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

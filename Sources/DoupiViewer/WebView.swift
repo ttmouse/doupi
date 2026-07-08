@@ -62,6 +62,7 @@ struct WebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         if #available(macOS 13.3, *) { webView.isInspectable = true }
+        context.coordinator.webView = webView
         // Find the NSScrollView and force overlay scrollers + clear background
         if let scrollView = webView.subviews.first(where: { $0 is NSScrollView }) as? NSScrollView {
             scrollView.scrollerStyle = .overlay
@@ -99,26 +100,13 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        // Apply search
-        let onUpdate = onSearchUpdate
-        if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
-            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                if let json = result as? String,
-                   let data = json.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                    context.coordinator.matchCount = obj["count"] ?? 0
-                    context.coordinator.currentIdx = obj["current"] ?? 0
-                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                }
-            }
-        } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
-            webView.evaluateJavaScript("doupiSearch('')")
-            context.coordinator.matchCount = 0
-            context.coordinator.currentIdx = 0
-            onUpdate?(0, 0)
-        }
+        // Store search query in coordinator — didFinish retries if page not ready
+        context.coordinator.pendingSearchQuery = searchQuery
+        context.coordinator.pendingOnUpdate = onSearchUpdate
+        context.coordinator.applySearchIfReady()
 
         // Handle navigation
+        let onUpdate = onSearchUpdate
         switch searchAction {
         case .next?:
             webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
@@ -143,6 +131,9 @@ struct WebView: NSViewRepresentable {
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
+        var pendingSearchQuery: String? = nil
+        var pendingOnUpdate: ((Int, Int) -> Void)? = nil
+        weak var webView: WKWebView?
         let onNavigationError: ((String) -> Void)?
 
         init(onNavigationError: ((String) -> Void)?) {
@@ -164,6 +155,30 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(SearchJS.injectionScript)
             pageReady = true
+            applySearchIfReady()
+        }
+
+        /// Try to execute the pending search query.
+        func applySearchIfReady() {
+            guard pageReady, let wv = webView else { return }
+            let onUpdate = pendingOnUpdate
+
+            if let q = pendingSearchQuery, !q.isEmpty {
+                wv.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
+                    if let json = result as? String,
+                       let data = json.data(using: .utf8),
+                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                        self.matchCount = obj["count"] ?? 0
+                        self.currentIdx = obj["current"] ?? 0
+                        onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                    }
+                }
+            } else if pendingSearchQuery?.isEmpty != false {
+                wv.evaluateJavaScript("doupiSearch('')")
+                self.matchCount = 0
+                self.currentIdx = 0
+                onUpdate?(0, 0)
+            }
         }
     }
 
