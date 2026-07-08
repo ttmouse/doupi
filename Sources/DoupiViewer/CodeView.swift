@@ -11,26 +11,32 @@ enum SearchAction: Equatable {
 
 /// Renders source code with syntax highlighting via highlight.js v11
 /// inside a transparent-background WKWebView. Supports text search with
-/// JS-based highlighting. Search functions from SearchJS.functionsJS
-/// are embedded inline in the HTML template.
+/// JS-based highlighting.
 struct CodeView: NSViewRepresentable {
 
     let content: String
     let language: String
 
-    /// When non-nil, the JS search highlighter is triggered.
     var searchQuery: String? = nil
-
-    /// Called by the parent to navigate between matches.
     var searchAction: SearchAction? = nil
-
-    /// Called when search results update: (matchCount, currentMatch).
     var onSearchUpdate: ((Int, Int) -> Void)? = nil
 
     // MARK: - NSViewRepresentable
 
     func makeNSView(context: Context) -> WKWebView {
-        let config = buildConfig()
+        let config = WKWebViewConfiguration()
+        let pref = WKWebpagePreferences()
+        pref.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = pref
+
+        // Inject search functions via WKUserScript (available before the page loads)
+        let searchScript = WKUserScript(
+            source: SearchJS.functionsJS,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(searchScript)
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
@@ -42,7 +48,6 @@ struct CodeView: NSViewRepresentable {
         let oldKey = "\(context.coordinator.lastContentHash)-\(context.coordinator.lastLanguage)"
         let newKey = "\(content.hashValue)-\(language)"
 
-        // Only reload HTML when content/language actually changed
         if oldKey != newKey {
             guard let html = buildHTML() else {
                 webView.loadHTMLString("<p style='color:red'>Failed to load resources.</p>", baseURL: nil)
@@ -51,29 +56,17 @@ struct CodeView: NSViewRepresentable {
             context.coordinator.lastContentHash = content.hashValue
             context.coordinator.lastLanguage = language
             context.coordinator.pageReady = false
+            context.coordinator.pendingQuery = nil
             webView.loadHTMLString(html, baseURL: nil)
         }
 
-        // Store latest search so didFinish can retry if page wasn't ready
-        context.coordinator.lastSearchQuery = searchQuery
-        context.coordinator.lastOnUpdate = onSearchUpdate
+        // Store pending query so didFinish can retry
+        context.coordinator.pendingQuery = searchQuery
+        context.coordinator.pendingOnUpdate = onSearchUpdate
 
-        // Apply search — only when page is ready so JS functions are defined
-        if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
-            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                if let json = result as? String,
-                   let data = json.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                    context.coordinator.matchCount = obj["count"] ?? 0
-                    context.coordinator.currentIdx = obj["current"] ?? 0
-                    onSearchUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                }
-            }
-        } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
-            webView.evaluateJavaScript("doupiSearch('')")
-            context.coordinator.matchCount = 0
-            context.coordinator.currentIdx = 0
-            onSearchUpdate?(0, 0)
+        // Execute if page is ready
+        if context.coordinator.pageReady {
+            applySearch(webView: webView, coordinator: context.coordinator)
         }
 
         // Handle navigation
@@ -98,6 +91,27 @@ struct CodeView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    /// Execute pending search on a ready page.
+    private func applySearch(webView: WKWebView, coordinator: Coordinator) {
+        let onUpdate = coordinator.pendingOnUpdate
+        if let q = coordinator.pendingQuery, !q.isEmpty {
+            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
+                if let json = result as? String,
+                   let data = json.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                    coordinator.matchCount = obj["count"] ?? 0
+                    coordinator.currentIdx = obj["current"] ?? 0
+                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                }
+            }
+        } else if coordinator.pendingQuery?.isEmpty != false {
+            webView.evaluateJavaScript("doupiSearch('')")
+            coordinator.matchCount = 0
+            coordinator.currentIdx = 0
+            onUpdate?(0, 0)
+        }
+    }
+
     // MARK: - Coordinator
 
     class Coordinator: NSObject, WKNavigationDelegate {
@@ -106,8 +120,8 @@ struct CodeView: NSViewRepresentable {
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
-        var lastSearchQuery: String? = nil
-        var lastOnUpdate: ((Int, Int) -> Void)? = nil
+        var pendingQuery: String? = nil
+        var pendingOnUpdate: ((Int, Int) -> Void)? = nil
 
         func webView(_ webView: WKWebView,
                      didFail navigation: WKNavigation!,
@@ -115,38 +129,28 @@ struct CodeView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             pageReady = true
-            // Retry last search that was set before page became ready
-            if let q = lastSearchQuery, !q.isEmpty {
+            // Search functions were injected via WKUserScript — always available
+            if let q = pendingQuery, !q.isEmpty {
                 webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
                     if let json = result as? String,
                        let data = json.data(using: .utf8),
                        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
                         self.matchCount = obj["count"] ?? 0
                         self.currentIdx = obj["current"] ?? 0
-                        self.lastOnUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                        self.pendingOnUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
                     }
                 }
-            } else if lastSearchQuery?.isEmpty != false {
+            } else if pendingQuery?.isEmpty != false {
                 webView.evaluateJavaScript("doupiSearch('')")
                 self.matchCount = 0
                 self.currentIdx = 0
-                self.lastOnUpdate?(0, 0)
+                self.pendingOnUpdate?(0, 0)
             }
         }
     }
 
-    // MARK: - Private helpers
+    // MARK: - HTML builder
 
-    private func buildConfig() -> WKWebViewConfiguration {
-        let config = WKWebViewConfiguration()
-        let pref = WKWebpagePreferences()
-        pref.allowsContentJavaScript = true
-        config.defaultWebpagePreferences = pref
-        return config
-    }
-
-    /// Load highlight.min.js & highlight.min.css from the SPM resource bundle
-    /// and assemble a self-contained HTML document with inline search JS.
     private func buildHTML() -> String? {
         guard let cssURL = Bundle.module.url(forResource: "highlight.min", withExtension: "css"),
               let jsURL  = Bundle.module.url(forResource: "highlight.min", withExtension: "js"),
@@ -157,6 +161,9 @@ struct CodeView: NSViewRepresentable {
         let escaped  = escapeHTML(content)
         let language = self.language.isEmpty ? "plaintext" : self.language
 
+        // NOTE: SearchJS.functionsJS is NOT embedded inline here.
+        // It's injected via WKUserScript in makeNSView so it's available
+        // before the page even loads, and survives page navigations.
         return """
         <!DOCTYPE html>
         <html>

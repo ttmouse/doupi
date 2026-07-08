@@ -81,17 +81,10 @@ struct DocumentView: View {
 
     // MARK: - Syntax-highlighted code
 
-    @ViewBuilder
     private var codeView: some View {
-        if let content = fileContent {
-            CodeView(content: content, language: info.highlightLanguage,
-                     searchQuery: searchQuery, searchAction: searchAction,
-                     onSearchUpdate: onSearchUpdate)
-        } else {
-            CodeView(content: "", language: info.highlightLanguage,
-                     searchQuery: searchQuery, searchAction: searchAction,
-                     onSearchUpdate: onSearchUpdate)
-        }
+        CodeView(content: fileContent ?? "", language: info.highlightLanguage,
+                 searchQuery: searchQuery, searchAction: searchAction,
+                 onSearchUpdate: onSearchUpdate)
     }
 
     // MARK: - Image
