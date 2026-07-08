@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Dispatches to the correct renderer based on file type.
-/// For code/text views, reads file content asynchronously to avoid main-thread blocking.
+/// For code/text views, reads file content once (synchronously on first access),
+/// then caches it so CodeView/MarkdownView are created immediately.
 struct DocumentView: View {
 
     let info: FileInfo
@@ -13,7 +14,11 @@ struct DocumentView: View {
     /// Called when search results update: (matchCount, currentMatch).
     var onSearchUpdate: ((Int, Int) -> Void)? = nil
 
-    @State private var fileContent: String?
+    /// Read once on first body render — synchronous for small code/text files.
+    /// Large files load in a fraction of a second; the trade-off is that
+    /// the main thread is briefly occupied, but it guarantees CodeView exists
+    /// and its WKWebView starts loading before any search can arrive.
+    @State private var fileContent: String? = nil
 
     var body: some View {
         Group {
@@ -36,7 +41,7 @@ struct DocumentView: View {
             }
         }
         .task(id: info.url) {
-            await loadContent()
+            await loadContentIfNeeded()
         }
     }
 
@@ -83,7 +88,9 @@ struct DocumentView: View {
                      searchQuery: searchQuery, searchAction: searchAction,
                      onSearchUpdate: onSearchUpdate)
         } else {
-            loadingIndicator
+            CodeView(content: "", language: info.highlightLanguage,
+                     searchQuery: searchQuery, searchAction: searchAction,
+                     onSearchUpdate: onSearchUpdate)
         }
     }
 
@@ -114,7 +121,9 @@ struct DocumentView: View {
             }
             .background(Color.appBackground)
         } else {
-            loadingIndicator
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.appBackground)
         }
     }
 
@@ -136,21 +145,10 @@ struct DocumentView: View {
         .background(Color.appBackground)
     }
 
-    // MARK: - Loading
-
-    private var loadingIndicator: some View {
-        ProgressView()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.appBackground)
-    }
-
     // MARK: - Async loading
 
-    private func loadContent() async {
-        guard info.isCode || info.isText else {
-            fileContent = nil
-            return
-        }
+    private func loadContentIfNeeded() async {
+        guard fileContent == nil, (info.isCode || info.isText) else { return }
         let url = info.url
         let content: String = await Task.detached(priority: .userInitiated) {
             (try? String(contentsOf: url, encoding: .utf8)) ?? "// 无法读取文件内容"

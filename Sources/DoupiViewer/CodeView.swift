@@ -54,8 +54,11 @@ struct CodeView: NSViewRepresentable {
             webView.loadHTMLString(html, baseURL: nil)
         }
 
+        // Store latest search so didFinish can retry if page wasn't ready
+        context.coordinator.lastSearchQuery = searchQuery
+        context.coordinator.lastOnUpdate = onSearchUpdate
+
         // Apply search — only when page is ready so JS functions are defined
-        let onUpdate = onSearchUpdate
         if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
             webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
                 if let json = result as? String,
@@ -63,14 +66,14 @@ struct CodeView: NSViewRepresentable {
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
                     context.coordinator.matchCount = obj["count"] ?? 0
                     context.coordinator.currentIdx = obj["current"] ?? 0
-                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                    onSearchUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
                 }
             }
         } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
             webView.evaluateJavaScript("doupiSearch('')")
             context.coordinator.matchCount = 0
             context.coordinator.currentIdx = 0
-            onUpdate?(0, 0)
+            onSearchUpdate?(0, 0)
         }
 
         // Handle navigation
@@ -79,14 +82,14 @@ struct CodeView: NSViewRepresentable {
             webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
                 if let idx = result as? Int {
                     context.coordinator.currentIdx = idx
-                    onUpdate?(context.coordinator.matchCount, idx)
+                    onSearchUpdate?(context.coordinator.matchCount, idx)
                 }
             }
         case .prev?:
             webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
                 if let idx = result as? Int {
                     context.coordinator.currentIdx = idx
-                    onUpdate?(context.coordinator.matchCount, idx)
+                    onSearchUpdate?(context.coordinator.matchCount, idx)
                 }
             }
         case nil: break
@@ -103,6 +106,8 @@ struct CodeView: NSViewRepresentable {
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
+        var lastSearchQuery: String? = nil
+        var lastOnUpdate: ((Int, Int) -> Void)? = nil
 
         func webView(_ webView: WKWebView,
                      didFail navigation: WKNavigation!,
@@ -110,6 +115,23 @@ struct CodeView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             pageReady = true
+            // Retry last search that was set before page became ready
+            if let q = lastSearchQuery, !q.isEmpty {
+                webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
+                    if let json = result as? String,
+                       let data = json.data(using: .utf8),
+                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                        self.matchCount = obj["count"] ?? 0
+                        self.currentIdx = obj["current"] ?? 0
+                        self.lastOnUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                    }
+                }
+            } else if lastSearchQuery?.isEmpty != false {
+                webView.evaluateJavaScript("doupiSearch('')")
+                self.matchCount = 0
+                self.currentIdx = 0
+                self.lastOnUpdate?(0, 0)
+            }
         }
     }
 
