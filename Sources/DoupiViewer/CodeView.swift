@@ -11,7 +11,8 @@ enum SearchAction: Equatable {
 
 /// Renders source code with syntax highlighting via highlight.js v11
 /// inside a transparent-background WKWebView. Supports text search with
-/// JS-based highlighting.
+/// JS-based highlighting. Search functions from SearchJS.functionsJS
+/// are embedded inline in the HTML template.
 struct CodeView: NSViewRepresentable {
 
     let content: String
@@ -34,7 +35,6 @@ struct CodeView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         if #available(macOS 13.3, *) { webView.isInspectable = true }
-        context.coordinator.webView = webView
         return webView
     }
 
@@ -54,10 +54,43 @@ struct CodeView: NSViewRepresentable {
             webView.loadHTMLString(html, baseURL: nil)
         }
 
-        // Apply search — store in coordinator so didFinish retries if page not ready
-        context.coordinator.pendingSearchQuery = searchQuery
-        context.coordinator.pendingOnUpdate = onSearchUpdate
-        context.coordinator.applySearchIfReady()
+        // Apply search — only when page is ready so JS functions are defined
+        let onUpdate = onSearchUpdate
+        if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
+            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
+                if let json = result as? String,
+                   let data = json.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                    context.coordinator.matchCount = obj["count"] ?? 0
+                    context.coordinator.currentIdx = obj["current"] ?? 0
+                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                }
+            }
+        } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
+            webView.evaluateJavaScript("doupiSearch('')")
+            context.coordinator.matchCount = 0
+            context.coordinator.currentIdx = 0
+            onUpdate?(0, 0)
+        }
+
+        // Handle navigation
+        switch searchAction {
+        case .next?:
+            webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
+                if let idx = result as? Int {
+                    context.coordinator.currentIdx = idx
+                    onUpdate?(context.coordinator.matchCount, idx)
+                }
+            }
+        case .prev?:
+            webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
+                if let idx = result as? Int {
+                    context.coordinator.currentIdx = idx
+                    onUpdate?(context.coordinator.matchCount, idx)
+                }
+            }
+        case nil: break
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -67,40 +100,9 @@ struct CodeView: NSViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate {
         var lastContentHash: Int = 0
         var lastLanguage: String = ""
-        weak var webView: WKWebView?
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
-        var pendingSearchQuery: String? = nil
-        var pendingOnUpdate: ((Int, Int) -> Void)? = nil
-
-        /// Try to execute the pending search query.
-        /// No-op if page isn't ready yet — didFinish will call this again.
-        func applySearchIfReady() {
-            guard pageReady, let webView = webView else { return }
-            let onUpdate = pendingOnUpdate
-
-            if let q = pendingSearchQuery, !q.isEmpty {
-                webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                    if let json = result as? String,
-                       let data = json.data(using: .utf8),
-                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                        self.matchCount = obj["count"] ?? 0
-                        self.currentIdx = obj["current"] ?? 0
-                        onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                    }
-                }
-            } else if pendingSearchQuery?.isEmpty != false {
-                webView.evaluateJavaScript("doupiSearch('')")
-                self.matchCount = 0
-                self.currentIdx = 0
-                onUpdate?(0, 0)
-            }
-
-            // Handle navigation
-            // Note: searchAction would need to be stored too; for simplicity navigation
-            // happens via updateNSView → evaluateJavaScript directly.
-        }
 
         func webView(_ webView: WKWebView,
                      didFail navigation: WKNavigation!,
@@ -108,7 +110,6 @@ struct CodeView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             pageReady = true
-            applySearchIfReady()
         }
     }
 
@@ -123,7 +124,7 @@ struct CodeView: NSViewRepresentable {
     }
 
     /// Load highlight.min.js & highlight.min.css from the SPM resource bundle
-    /// and assemble a self-contained HTML document.
+    /// and assemble a self-contained HTML document with inline search JS.
     private func buildHTML() -> String? {
         guard let cssURL = Bundle.module.url(forResource: "highlight.min", withExtension: "css"),
               let jsURL  = Bundle.module.url(forResource: "highlight.min", withExtension: "js"),
