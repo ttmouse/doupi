@@ -72,7 +72,9 @@ struct SearchBar: View {
         .cornerRadius(8)
         .onAppear {
             localQuery = query
-            isFocused = true
+            DispatchQueue.main.async {
+                isFocused = true
+            }
         }
     }
 
