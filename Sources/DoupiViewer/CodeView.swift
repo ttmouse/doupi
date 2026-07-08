@@ -59,9 +59,14 @@ struct CodeView: NSViewRepresentable {
                 if let json = result as? String,
                    let data = json.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                    context.coordinator.matchCount = obj["count"] ?? 0
-                    context.coordinator.currentIdx = obj["current"] ?? 0
-                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                    let count = obj["count"] ?? 0
+                    let idx = obj["current"] ?? 0
+                    context.coordinator.matchCount = count
+                    context.coordinator.currentIdx = idx
+                    fputs("[CV] search \(count)/\(idx)\n", stderr)
+                    onUpdate?(count, idx)
+                } else {
+                    fputs("[CV] search no result (q=\(q))\n", stderr)
                 }
             }
         } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
