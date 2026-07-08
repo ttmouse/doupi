@@ -27,6 +27,9 @@ struct WebView: NSViewRepresentable {
     /// Called when a navigation error occurs (for webRuntimeError detection).
     var onNavigationError: ((String) -> Void)? = nil
 
+    /// Called when search results update: (matchCount, currentMatch).
+    var onSearchUpdate: ((Int, Int) -> Void)? = nil
+
     func makeCoordinator() -> Coordinator { Coordinator(onNavigationError: onNavigationError) }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -97,6 +100,7 @@ struct WebView: NSViewRepresentable {
         }
 
         // Apply search
+        let onUpdate = onSearchUpdate
         if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
             webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
                 if let json = result as? String,
@@ -104,23 +108,31 @@ struct WebView: NSViewRepresentable {
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
                     context.coordinator.matchCount = obj["count"] ?? 0
                     context.coordinator.currentIdx = obj["current"] ?? 0
+                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
                 }
             }
         } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
             webView.evaluateJavaScript("doupiSearch('')")
             context.coordinator.matchCount = 0
             context.coordinator.currentIdx = 0
+            onUpdate?(0, 0)
         }
 
         // Handle navigation
         switch searchAction {
         case .next?:
             webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
-                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+                if let idx = result as? Int {
+                    context.coordinator.currentIdx = idx
+                    onUpdate?(context.coordinator.matchCount, idx)
+                }
             }
         case .prev?:
             webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
-                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+                if let idx = result as? Int {
+                    context.coordinator.currentIdx = idx
+                    onUpdate?(context.coordinator.matchCount, idx)
+                }
             }
         case nil: break
         }
@@ -150,43 +162,10 @@ struct WebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            webView.evaluateJavaScript(WebView.searchInjectionJS)
+            webView.evaluateJavaScript(SearchJS.injectionScript)
             pageReady = true
         }
     }
-
-    /// JS injected into every page so doupiSearch/doupiNavigate work regardless of load mode.
-    private static let searchInjectionJS = """
-    (function() {
-      if (window._doupiInjected) return;
-      window._doupiInjected = true;
-      var s = document.createElement('style');
-      s.textContent = 'mark.doupi-search{background:rgba(93,154,50,0.35);color:inherit;border-radius:2px}mark.doupi-current{background:rgba(93,154,50,0.65);outline:1px solid rgba(93,154,50,0.8);border-radius:2px}';
-      document.head.appendChild(s);
-      window._doupiMatches=[];window._doupiCurrent=-1;
-      window.doupiSearch=function(q){
-        document.querySelectorAll('mark.doupi-search,mark.doupi-current').forEach(function(m){var p=m.parentNode;while(m.firstChild)p.insertBefore(m.firstChild,m);p.removeChild(m)});
-        window._doupiMatches=[];window._doupiCurrent=-1;
-        if(!q)return JSON.stringify({count:0,current:-1});
-        var w=document.createTreeWalker(document.body,4,null),ql=q.toLowerCase(),n,r;
-        while(n=w.nextNode()){var p=n.parentNode;if(p&&(p.nodeName==='MARK'||p.nodeName==='SCRIPT'||p.nodeName==='STYLE'))continue;
-        var t=n.textContent,i=t.toLowerCase().indexOf(ql);
-        if(i>=0){r=document.createRange();r.setStart(n,i);r.setEnd(n,i+q.length);
-        try{var mk=document.createElement('mark');mk.className='doupi-search';r.surroundContents(mk);window._doupiMatches.push(mk);w.currentNode=mk}catch(e){}}}
-        return JSON.stringify({count:window._doupiMatches.length,current:window._doupiCurrent});
-      };
-      window.doupiNavigate=function(d){
-        if(window._doupiMatches.length===0)return -1;
-        if(window._doupiCurrent>=0&&window._doupiCurrent<window._doupiMatches.length)window._doupiMatches[window._doupiCurrent].className='doupi-search';
-        window._doupiCurrent+=d;
-        if(window._doupiCurrent>=window._doupiMatches.length)window._doupiCurrent=0;
-        if(window._doupiCurrent<0)window._doupiCurrent=window._doupiMatches.length-1;
-        window._doupiMatches[window._doupiCurrent].className='doupi-current';
-        window._doupiMatches[window._doupiCurrent].scrollIntoView({behavior:'smooth',block:'center'});
-        return window._doupiCurrent;
-      };
-    })();
-    """
 
     /// Force transparent overlay scrollbar on the WKWebView's NSScrollView.
     fileprivate func applyScrollbarStyle(_ webView: WKWebView) {

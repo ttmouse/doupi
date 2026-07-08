@@ -127,7 +127,11 @@ struct ContentView: View {
         return DocumentView(
             info: info,
             searchQuery: search.isVisible ? search.query : nil,
-            searchAction: action
+            searchAction: action,
+            onSearchUpdate: { matchCount, currentMatch in
+                search.matchCount = matchCount
+                search.currentMatch = currentMatch
+            }
         )
         .id(info.id)
         .onAppear {

@@ -3,12 +3,10 @@ import Foundation
 /// Persists recently opened files using UserDefaults.
 enum FileHistory {
     private static let key = "DoupiRecentFiles"
+
     static func load() -> [URL] {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let urls = try? JSONDecoder().decode([URL].self, from: data)
-        else { return [] }
         // 标准化：将文件引用 URL（file:///.file/id=...）转为绝对路径
-        return urls.map { $0.standardizedFileURL }
+        UserDefaultsStorage.loadArray(URL.self, forKey: key).map { $0.standardizedFileURL }
     }
 
     static func add(_ url: URL) {
@@ -29,12 +27,10 @@ enum FileHistory {
     }
 
     static func contains(_ url: URL) -> Bool {
-        let standard = url.standardizedFileURL
-        return load().contains(standard)
+        load().contains(url.standardizedFileURL)
     }
 
     static func save(_ urls: [URL]) {
-        guard let data = try? JSONEncoder().encode(urls) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+        UserDefaultsStorage.save(urls, forKey: key)
     }
 }

@@ -23,6 +23,9 @@ struct CodeView: NSViewRepresentable {
     /// Called by the parent to navigate between matches.
     var searchAction: SearchAction? = nil
 
+    /// Called when search results update: (matchCount, currentMatch).
+    var onSearchUpdate: ((Int, Int) -> Void)? = nil
+
     // MARK: - NSViewRepresentable
 
     func makeNSView(context: Context) -> WKWebView {
@@ -50,6 +53,7 @@ struct CodeView: NSViewRepresentable {
         }
 
         // Apply search if needed
+        let onUpdate = onSearchUpdate
         if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
             webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
                 if let json = result as? String,
@@ -57,6 +61,7 @@ struct CodeView: NSViewRepresentable {
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
                     context.coordinator.matchCount = obj["count"] ?? 0
                     context.coordinator.currentIdx = obj["current"] ?? 0
+                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
                 }
             }
         } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
@@ -64,17 +69,24 @@ struct CodeView: NSViewRepresentable {
             webView.evaluateJavaScript("doupiSearch('')")
             context.coordinator.matchCount = 0
             context.coordinator.currentIdx = 0
+            onUpdate?(0, 0)
         }
 
         // Handle navigation
         switch searchAction {
         case .next?:
             webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
-                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+                if let idx = result as? Int {
+                    context.coordinator.currentIdx = idx
+                    onUpdate?(context.coordinator.matchCount, idx)
+                }
             }
         case .prev?:
             webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
-                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+                if let idx = result as? Int {
+                    context.coordinator.currentIdx = idx
+                    onUpdate?(context.coordinator.matchCount, idx)
+                }
             }
         case nil: break
         }
@@ -140,16 +152,7 @@ struct CodeView: NSViewRepresentable {
         }
         pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
         code { background: transparent !important; }
-        mark.doupi-search {
-          background: rgba(93,154,50,0.35);
-          color: inherit;
-          border-radius: 2px;
-        }
-        mark.doupi-current {
-          background: rgba(93,154,50,0.65);
-          outline: 1px solid rgba(93,154,50,0.8);
-          border-radius: 2px;
-        }
+        \(SearchJS.styleCSS)
         \(css)
         </style>
         </head>
@@ -164,64 +167,7 @@ struct CodeView: NSViewRepresentable {
         });
         </script>
         <script>
-        var _doupiMatches = [];
-        var _doupiCurrent = -1;
-
-        function doupiSearch(query) {
-          // Clear old highlights
-          document.querySelectorAll('mark.doupi-search,mark.doupi-current').forEach(function(m) {
-            var parent = m.parentNode;
-            while (m.firstChild) parent.insertBefore(m.firstChild, m);
-            parent.removeChild(m);
-          });
-          _doupiMatches = [];
-          _doupiCurrent = -1;
-
-          if (!query) return JSON.stringify({count:0,current:-1});
-
-          var walker = document.createTreeWalker(document.body, 4/*SHOW_TEXT*/, null);
-          var qLower = query.toLowerCase();
-          var node;
-          var ranges = [];
-
-          while (node = walker.nextNode()) {
-            // Skip nodes inside <mark>, <script>, <style>
-            var p = node.parentNode;
-            if (p && (p.nodeName === 'MARK' || p.nodeName === 'SCRIPT' || p.nodeName === 'STYLE')) continue;
-
-            var text = node.textContent;
-            var idx = text.toLowerCase().indexOf(qLower);
-            if (idx >= 0) {
-              var range = document.createRange();
-              range.setStart(node, idx);
-              range.setEnd(node, idx + query.length);
-              try {
-                var mark = document.createElement('mark');
-                mark.className = 'doupi-search';
-                range.surroundContents(mark);
-                _doupiMatches.push(mark);
-                walker.currentNode = mark;
-              } catch(e) {}
-            }
-          }
-          return JSON.stringify({count:_doupiMatches.length,current:_doupiCurrent});
-        }
-
-        function doupiNavigate(dir) {
-          if (_doupiMatches.length === 0) return -1;
-          // Remove current highlight
-          if (_doupiCurrent >= 0 && _doupiCurrent < _doupiMatches.length) {
-            _doupiMatches[_doupiCurrent].className = 'doupi-search';
-          }
-          // Advance
-          _doupiCurrent += dir;
-          if (_doupiCurrent >= _doupiMatches.length) _doupiCurrent = 0;
-          if (_doupiCurrent < 0) _doupiCurrent = _doupiMatches.length - 1;
-          // Highlight current
-          _doupiMatches[_doupiCurrent].className = 'doupi-current';
-          _doupiMatches[_doupiCurrent].scrollIntoView({behavior:'smooth',block:'center'});
-          return _doupiCurrent;
-        }
+        \(SearchJS.functionsJS)
         </script>
         </body>
         </html>

@@ -11,29 +11,24 @@ enum FileTags {
 
     static func load() -> [URL: Set<String>] {
         if let cache = cache { return cache }
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let dict = try? JSONDecoder().decode([String: [String]].self, from: data)
-        else {
-            cache = [:]
-            return cache!
-        }
-        cache = dict.reduce(into: [:]) { result, pair in
-            if let url = URL(string: pair.key)?.standardizedFileURL {
-                result[url] = Set(pair.value)
+        let raw: [String: [String]] = UserDefaultsStorage.loadDict(forKey: key)
+        var result = [URL: Set<String>]()
+        for (key, values) in raw {
+            if let url = URL(string: key)?.standardizedFileURL {
+                result[url] = Set(values)
             }
         }
-        return cache!
+        cache = result
+        return result
     }
 
     static func tags(for url: URL) -> Set<String> {
-        let standard = url.standardizedFileURL
-        return load()[standard] ?? []
+        load()[url.standardizedFileURL] ?? []
     }
 
     static func addTag(_ tag: String, to url: URL) {
         var dict = load()
-        let standard = url.standardizedFileURL
-        dict[standard, default: []].insert(tag)
+        dict[url.standardizedFileURL, default: []].insert(tag)
         save(dict)
     }
 
@@ -58,15 +53,12 @@ enum FileTags {
 
     /// All unique tag names across all files, sorted.
     static func allTags() -> [String] {
-        let dict = load()
-        let tags = Set(dict.values.flatMap { $0 })
-        return tags.sorted()
+        Set(load().values.flatMap { $0 }).sorted()
     }
 
     /// URLs tagged with the given tag.
     static func urls(for tag: String) -> [URL] {
-        let dict = load()
-        return dict.filter { $0.value.contains(tag) }.map(\.key)
+        load().filter { $0.value.contains(tag) }.map(\.key)
     }
 
     // MARK: - Persistence
@@ -76,7 +68,6 @@ enum FileTags {
         let encodable = dict.reduce(into: [String: [String]]()) { result, pair in
             result[pair.key.absoluteString] = Array(pair.value).sorted()
         }
-        guard let data = try? JSONEncoder().encode(encodable) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+        UserDefaultsStorage.save(encodable, forKey: key)
     }
 }

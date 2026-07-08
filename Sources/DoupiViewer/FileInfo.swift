@@ -43,9 +43,18 @@ struct FileInfo: Identifiable, Equatable {
     }
 
     var isImage: Bool {
-        ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "ico"]
-            .contains(ext.lowercased())
+        Self.imageExtensions.contains(ext.lowercased())
     }
+
+    // MARK: - Static type checks (reusable without FileInfo instance)
+
+    static func isCode(ext: String) -> Bool { codeExtensions.contains(ext.lowercased()) }
+    static func isImage(ext: String) -> Bool { imageExtensions.contains(ext.lowercased()) }
+    static func isHTML(ext: String) -> Bool { ["html", "htm"].contains(ext.lowercased()) }
+    static func isTSX(ext: String) -> Bool { ["tsx", "jsx"].contains(ext.lowercased()) }
+    static func isText(ext: String) -> Bool { ext.lowercased() == "txt" }
+    static func isPDF(ext: String) -> Bool { ext.lowercased() == "pdf" }
+    static func isMarkdown(ext: String) -> Bool { ["md", "markdown"].contains(ext.lowercased()) }
 
     var isText: Bool { ext.lowercased() == "txt" }
 
@@ -70,6 +79,10 @@ struct FileInfo: Identifiable, Equatable {
         "swift", "kt", "scala", "pl", "lua", "r", "dart",
         "fs", "fsx", "svelte", "vue", "astro",
         "mjs", "cjs", "mts", "cts",
+    ]
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "ico",
     ]
 
     private static let map: [String: String] = [
