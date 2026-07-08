@@ -10,9 +10,6 @@ struct PreviewContainer: View {
     var searchQuery: String? = nil
     var searchAction: SearchAction? = nil
 
-    /// Called when search results update: (matchCount, currentMatch).
-    var onSearchUpdate: ((Int, Int) -> Void)? = nil
-
     @State private var state: PreviewState = .idle
     @State private var esbuildPath: String?
     @State private var webError: String?
@@ -35,6 +32,7 @@ struct PreviewContainer: View {
                 loadingView
 
             case .ready:
+                // Should not reach here in normal flow
                 loadingView
             }
 
@@ -48,6 +46,8 @@ struct PreviewContainer: View {
             await runPreviewPipeline()
         }
         .onChange(of: sourceURL) { _, _ in
+            // Reset state when source URL changes so the old preview
+            // doesn't flash while the new pipeline runs.
             state = .idle
             webError = nil
         }
@@ -88,25 +88,26 @@ struct PreviewContainer: View {
             searchAction: searchAction,
             onNavigationError: { err in
                 webError = err
-            },
-            onSearchUpdate: onSearchUpdate
+            }
         )
     }
 
     // MARK: - Pipeline
 
     private func runPreviewPipeline() async {
-        // Step 1: Resolve esbuild (on global queue — Process.waitUntilExit blocks)
+        // Step 1: Resolve esbuild (dispatch to background thread explicitly)
         await MainActor.run { state = .resolvingRuntime }
-
-        let resolved = await Task.detached(priority: .userInitiated) {
-            EsbuildManager.resolve()
-        }.value
+        
+        let resolved: EsbuildManager.ResolveResult = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: EsbuildManager.resolve())
+            }
+        }
         switch resolved {
         case .ready(let path, let version):
             fputs("[PreviewContainer] esbuild ready: \(path) (\(version))\n", stderr)
-            esbuildPath = path
-
+            await MainActor.run { esbuildPath = path }
+        
         case .notFound(let paths):
             fputs("[PreviewContainer] esbuild not found\n", stderr)
             await MainActor.run {
@@ -120,24 +121,30 @@ struct PreviewContainer: View {
             }
             return
         }
-
-        // Step 2: Build (on global queue — Process.waitUntilExit blocks)
+        
+        // Step 2 & 3: Prepare workspace + Build (dispatch to background thread explicitly)
         await MainActor.run { state = .building }
-
-        guard let esbuildPath = esbuildPath else { return }
-
-        let result = await Task.detached(priority: .userInitiated) {
-            PreviewCompiler.compile(sourceURL: sourceURL, esbuildPath: esbuildPath)
-        }.value
-
+        
+        let currentEsbuildPath = await MainActor.run { esbuildPath }
+        guard let esbuildPath = currentEsbuildPath else { return }
+        
+        let result: Result<URL, PreviewBuildError> = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: PreviewCompiler.compile(sourceURL: self.sourceURL, esbuildPath: esbuildPath))
+            }
+        }
+        
         switch result {
         case .success(let indexHTMLURL):
             fputs("[PreviewContainer] build succeeded \(indexHTMLURL.path)\n", stderr)
+            await MainActor.run { state = .loadingWebView }
+        
+            // Small delay to let SwiftUI transition to loadingWebView
+            try? await Task.sleep(for: .milliseconds(50))
             await MainActor.run {
-                // Atomsically transition: show succeeded state with no intermediate loadingWebView flash.
                 state = .buildSucceeded(indexHTMLURL)
             }
-
+        
         case .failure(let buildError):
             fputs("[PreviewContainer] build failed with \(buildError.diagnostics.count) diagnostics\n", stderr)
             await MainActor.run {

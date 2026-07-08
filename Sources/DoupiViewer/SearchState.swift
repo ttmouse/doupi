@@ -1,8 +1,9 @@
 import Foundation
+import Observation
 
 /// Drives search bar visibility and state across the app.
-/// Plain struct so @State can track any property mutation directly.
-struct SearchState {
+@Observable
+class SearchState {
     var isVisible = false
     var query = ""
     var matchCount = 0
@@ -12,7 +13,7 @@ struct SearchState {
     var pendingAction: SearchAction? = nil
 
     /// Resets everything when search is closed.
-    mutating func close() {
+    func close() {
         isVisible = false
         query = ""
         matchCount = 0

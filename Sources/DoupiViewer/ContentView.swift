@@ -56,7 +56,7 @@ struct ContentView: View {
                                 currentMatch: search.currentMatch,
                                 onNext: { navigateSearch(1) },
                                 onPrev: { navigateSearch(-1) },
-                                onClose: { resetSearch() }
+                                onClose: { search.close() }
                             )
                             .padding(.horizontal, 16)
                             .padding(.vertical, 4)
@@ -197,7 +197,7 @@ struct ContentView: View {
     private func closeFile() {
         fileURL = nil
         fileInfo = nil
-        resetSearch()
+        search.close()
     }
 
     private func loadFile(url: URL) {
@@ -227,14 +227,6 @@ struct ContentView: View {
     }
 
     // MARK: - Search navigation
-
-    private func resetSearch() {
-        search.isVisible = false
-        search.query = ""
-        search.matchCount = 0
-        search.currentMatch = 0
-        search.pendingAction = nil
-    }
 
     private func navigateSearch(_ dir: Int) {
         search.pendingAction = dir > 0 ? .next : .prev
@@ -269,7 +261,7 @@ struct ContentView: View {
             }
             // Esc — close search
             if event.keyCode == 53 && search.isVisible {
-                resetSearch()
+                search.close()
                 return nil
             }
             // ⌘+O — open file

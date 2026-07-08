@@ -1,8 +1,6 @@
 import SwiftUI
 
 /// Dispatches to the correct renderer based on file type.
-/// For code/text views, reads file content once (synchronously on first access),
-/// then caches it so CodeView/MarkdownView are created immediately.
 struct DocumentView: View {
 
     let info: FileInfo
@@ -13,12 +11,6 @@ struct DocumentView: View {
 
     /// Called when search results update: (matchCount, currentMatch).
     var onSearchUpdate: ((Int, Int) -> Void)? = nil
-
-    /// Read once on first body render — synchronous for small code/text files.
-    /// Large files load in a fraction of a second; the trade-off is that
-    /// the main thread is briefly occupied, but it guarantees CodeView exists
-    /// and its WKWebView starts loading before any search can arrive.
-    @State private var fileContent: String? = nil
 
     var body: some View {
         Group {
@@ -40,9 +32,6 @@ struct DocumentView: View {
                 unsupportedView
             }
         }
-        .task(id: info.url) {
-            await loadContentIfNeeded()
-        }
     }
 
     // MARK: - HTML (file URL loading so CSS/images work)
@@ -53,8 +42,7 @@ struct DocumentView: View {
             fileURL: info.url,
             readAccessRoot: readRoot,
             searchQuery: searchQuery,
-            searchAction: searchAction,
-            onSearchUpdate: onSearchUpdate
+            searchAction: searchAction
         )
         .ignoresSafeArea()
     }
@@ -64,8 +52,7 @@ struct DocumentView: View {
     private var markdownView: some View {
         MarkdownView(url: info.url,
                      searchQuery: searchQuery,
-                     searchAction: searchAction,
-                     onSearchUpdate: onSearchUpdate)
+                     searchAction: searchAction)
         .ignoresSafeArea()
     }
 
@@ -74,17 +61,16 @@ struct DocumentView: View {
     private var tsxPreviewView: some View {
         PreviewContainer(sourceURL: info.url,
                          searchQuery: searchQuery,
-                         searchAction: searchAction,
-                         onSearchUpdate: onSearchUpdate)
+                         searchAction: searchAction)
         .ignoresSafeArea()
     }
 
     // MARK: - Syntax-highlighted code
 
     private var codeView: some View {
-        CodeView(content: fileContent ?? "", language: info.highlightLanguage,
-                 searchQuery: searchQuery, searchAction: searchAction,
-                 onSearchUpdate: onSearchUpdate)
+        let content = (try? String(contentsOf: info.url, encoding: .utf8)) ?? "// 无法读取文件内容"
+        return CodeView(content: content, language: info.highlightLanguage,
+                        searchQuery: searchQuery, searchAction: searchAction)
     }
 
     // MARK: - Image
@@ -101,23 +87,17 @@ struct DocumentView: View {
 
     // MARK: - Plain text
 
-    @ViewBuilder
     private var textView: some View {
-        if let content = fileContent {
-            ScrollView([.vertical, .horizontal]) {
-                Text(content)
-                    .font(.appCode)
-                    .foregroundColor(.appText)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-            }
-            .background(Color.appBackground)
-        } else {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.appBackground)
+        let content = (try? String(contentsOf: info.url, encoding: .utf8)) ?? "无法读取文件内容"
+        return ScrollView([.vertical, .horizontal]) {
+            Text(content)
+                .font(.appCode)
+                .foregroundColor(.appText)
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
         }
+        .background(Color.appBackground)
     }
 
     // MARK: - Unsupported
@@ -136,18 +116,5 @@ struct DocumentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground)
-    }
-
-    // MARK: - Async loading
-
-    private func loadContentIfNeeded() async {
-        guard fileContent == nil, (info.isCode || info.isText) else { return }
-        let url = info.url
-        let content: String = await Task.detached(priority: .userInitiated) {
-            (try? String(contentsOf: url, encoding: .utf8)) ?? "// 无法读取文件内容"
-        }.value
-        await MainActor.run {
-            self.fileContent = content
-        }
     }
 }

@@ -7,9 +7,6 @@ struct MarkdownView: NSViewRepresentable {
     var searchQuery: String? = nil
     var searchAction: SearchAction? = nil
 
-    /// Called when search results update: (matchCount, currentMatch).
-    var onSearchUpdate: ((Int, Int) -> Void)? = nil
-
     func makeCoordinator() -> Coordinator {
         Coordinator(searchAction: searchAction)
     }
@@ -24,24 +21,44 @@ struct MarkdownView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         if #available(macOS 13.3, *) { webView.isInspectable = true }
-        context.coordinator.webView = webView
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         let key = url.path
         guard context.coordinator.lastLoadKey != key else {
-            // Store latest search query and try to apply
-            context.coordinator.pendingSearchQuery = searchQuery
-            context.coordinator.pendingOnUpdate = onSearchUpdate
-            context.coordinator.applySearchIfReady()
+            applySearchIfReady(webView, context: context)
             return
         }
         context.coordinator.lastLoadKey = key
         context.coordinator.pageReady = false
-        context.coordinator.pendingSearchQuery = searchQuery
-        context.coordinator.pendingOnUpdate = onSearchUpdate
-        context.coordinator.scheduleLoad(url: url, webView: webView)
+
+        guard let md = try? String(contentsOf: url, encoding: .utf8) else { return }
+
+        // Encode as JSON so it's a safe JS string literal — JSONEncoder properly escapes
+        // `\`, `"`, `\n`, `\t`, and crucially `/` → `\/` (preventing </script> injection).
+        let encoder = JSONEncoder()
+        guard let jsonData = try? encoder.encode(md),
+              let jsonString = String(data: jsonData, encoding: .utf8)
+        else { return }
+
+        let html = buildHTML(markdownJSON: jsonString)
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    private func applySearchIfReady(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.pageReady else { return }
+        if let q = searchQuery, !q.isEmpty {
+            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')")
+        } else if searchQuery?.isEmpty != false {
+            webView.evaluateJavaScript("doupiSearch('')")
+        }
+
+        switch searchAction {
+        case .next?: webView.evaluateJavaScript("doupiNavigate(1)")
+        case .prev?: webView.evaluateJavaScript("doupiNavigate(-1)")
+        case nil: break
+        }
     }
 
     // MARK: - HTML builder
@@ -49,7 +66,7 @@ struct MarkdownView: NSViewRepresentable {
     /// Builds a self-contained HTML document.
     /// - Parameter markdownJSON: The markdown content as a JSON-encoded string
     ///   literal (double-quoted, properly escaped), ready to embed directly in JS.
-    fileprivate static func buildHTML(markdownJSON: String) -> String {
+    private func buildHTML(markdownJSON: String) -> String {
         let markedJS = MarkdownView.loadMarkedJS()
 
         return """
@@ -93,69 +110,15 @@ struct MarkdownView: NSViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoadKey: String = ""
         var pageReady = false
-        var matchCount = 0
-        var currentIdx = 0
-        var pendingSearchQuery: String? = nil
-        var pendingOnUpdate: ((Int, Int) -> Void)? = nil
-        weak var webView: WKWebView?
         let searchAction: SearchAction?
-        private var loadTask: Task<Void, Never>?
 
         init(searchAction: SearchAction?) {
             self.searchAction = searchAction
         }
 
-        deinit {
-            loadTask?.cancel()
-        }
-
-        /// Read markdown file off main thread, then load HTML into WKWebView.
-        func scheduleLoad(url: URL, webView: WKWebView) {
-            loadTask?.cancel()
-            loadTask = Task {
-                let markdown: String? = await Task.detached(priority: .userInitiated) {
-                    try? String(contentsOf: url, encoding: .utf8)
-                }.value
-
-                guard let md = markdown, !Task.isCancelled else { return }
-
-                // Encode as JSON for safe JS embedding (prevents </script> injection)
-                let encoder = JSONEncoder()
-                guard let jsonData = try? encoder.encode(md),
-                      let jsonString = String(data: jsonData, encoding: .utf8)
-                else { return }
-
-                let html = MarkdownView.buildHTML(markdownJSON: jsonString)
-                await MainActor.run {
-                    guard !Task.isCancelled else { return }
-                    webView.loadHTMLString(html, baseURL: nil)
-                }
-            }
-        }
-
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(MarkdownView.searchJS)
             pageReady = true
-            applySearchIfReady()
-        }
-
-        /// Try to execute the pending search query.
-        func applySearchIfReady() {
-            guard pageReady, let wv = webView else { return }
-            let onUpdate = pendingOnUpdate
-
-            if let q = pendingSearchQuery, !q.isEmpty {
-                wv.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                    if let json = result as? String,
-                       let data = json.data(using: .utf8),
-                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                        onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                    }
-                }
-            } else if pendingSearchQuery?.isEmpty != false {
-                wv.evaluateJavaScript("doupiSearch('')")
-                onUpdate?(0, 0)
-            }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -170,7 +133,35 @@ struct MarkdownView: NSViewRepresentable {
         }
     }
 
-    // MARK: - Search JS (shared via SearchJS)
+    // MARK: - Search JS
 
-    fileprivate static let searchJS = SearchJS.injectionScript
+    private static let searchJS = """
+    (function(){if(window._doupiInjected)return;window._doupiInjected=true;
+    var s=document.createElement('style');
+    s.textContent='mark.doupi-search{background:rgba(93,154,50,0.35);color:inherit;border-radius:2px}mark.doupi-current{background:rgba(93,154,50,0.65);outline:1px solid rgba(93,154,50,0.8);border-radius:2px}';
+    document.head.appendChild(s);
+    window._doupiMatches=[];window._doupiCurrent=-1;
+    window.doupiSearch=function(q){
+    document.querySelectorAll('mark.doupi-search,mark.doupi-current').forEach(function(m){var p=m.parentNode;while(m.firstChild)p.insertBefore(m.firstChild,m);p.removeChild(m)});
+    window._doupiMatches=[];window._doupiCurrent=-1;
+    if(!q)return JSON.stringify({count:0,current:-1});
+    var w=document.createTreeWalker(document.body,4,null),ql=q.toLowerCase(),n,r;
+    while(n=w.nextNode()){var p=n.parentNode;if(p&&(p.nodeName==='MARK'||p.nodeName==='SCRIPT'||p.nodeName==='STYLE'))continue;
+    var t=n.textContent,i=t.toLowerCase().indexOf(ql);
+    if(i>=0){r=document.createRange();r.setStart(n,i);r.setEnd(n,i+q.length);
+    try{var mk=document.createElement('mark');mk.className='doupi-search';r.surroundContents(mk);window._doupiMatches.push(mk);w.currentNode=mk}catch(e){}}}
+    return JSON.stringify({count:window._doupiMatches.length,current:window._doupiCurrent});
+    };
+    window.doupiNavigate=function(d){
+    if(window._doupiMatches.length===0)return -1;
+    if(window._doupiCurrent>=0&&window._doupiCurrent<window._doupiMatches.length)window._doupiMatches[window._doupiCurrent].className='doupi-search';
+    window._doupiCurrent+=d;
+    if(window._doupiCurrent>=window._doupiMatches.length)window._doupiCurrent=0;
+    if(window._doupiCurrent<0)window._doupiCurrent=window._doupiMatches.length-1;
+    window._doupiMatches[window._doupiCurrent].className='doupi-current';
+    window._doupiMatches[window._doupiCurrent].scrollIntoView({behavior:'smooth',block:'center'});
+    return window._doupiCurrent;
+    };
+    })();
+    """
 }

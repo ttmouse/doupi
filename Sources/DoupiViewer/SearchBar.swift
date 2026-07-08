@@ -29,9 +29,6 @@ struct SearchBar: View {
                 .onChange(of: localQuery) { _, newValue in
                     query = newValue
                 }
-                .onChange(of: query) { _, newValue in
-                    localQuery = newValue
-                }
                 .onSubmit { onNext() }
 
             // Match count
@@ -75,9 +72,7 @@ struct SearchBar: View {
         .cornerRadius(8)
         .onAppear {
             localQuery = query
-            DispatchQueue.main.async {
-                isFocused = true
-            }
+            isFocused = true
         }
     }
 

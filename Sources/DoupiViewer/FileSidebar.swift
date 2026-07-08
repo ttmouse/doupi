@@ -26,14 +26,21 @@ enum FileFormat: String, CaseIterable, Hashable {
     }
     static func `for`(_ url: URL) -> FileFormat? {
         let ext = url.pathExtension.lowercased()
-        if FileInfo.isHTML(ext: ext) { return .html }
-        if FileInfo.isMarkdown(ext: ext) { return .markdown }
-        if FileInfo.isTSX(ext: ext) { return .tsx }
-        if FileInfo.isPDF(ext: ext) { return .pdf }
-        if FileInfo.isText(ext: ext) { return .text }
-        if FileInfo.isImage(ext: ext) { return .image }
-        // code — only after checking tsx/jsx/html/md so those take priority
-        if FileInfo.isCode(ext: ext) { return .code }
+        if ["html", "htm"].contains(ext) { return .html }
+        if ["md", "markdown"].contains(ext) { return .markdown }
+        if ["tsx", "jsx"].contains(ext) { return .tsx }
+        if ["pdf"].contains(ext) { return .pdf }
+        if ["txt"].contains(ext) { return .text }
+        if ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "ico"].contains(ext) { return .image }
+        // code — only after checking tsx/jsx and html/md so those take priority
+        let codeExts: Set<String> = [
+            "js", "ts", "css", "scss", "less", "json", "yaml", "yml",
+            "py", "go", "rs", "sql", "sh", "bash", "zsh", "toml", "xml",
+            "php", "rb", "java", "c", "cpp", "h", "hpp", "swift", "kt",
+            "scala", "pl", "lua", "r", "dart", "fs", "fsx", "svelte",
+            "vue", "astro", "mjs", "cjs", "mts", "cts",
+        ]
+        if codeExts.contains(ext) { return .code }
         return nil
     }
 }

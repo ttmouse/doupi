@@ -5,11 +5,15 @@ enum PinnedFiles {
     private static let key = "DoupiPinnedFiles"
 
     static func load() -> Set<URL> {
-        UserDefaultsStorage.loadSet(URL.self, forKey: key)
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let urls = try? JSONDecoder().decode([URL].self, from: data)
+        else { return [] }
+        return Set(urls.map { $0.standardizedFileURL })
     }
 
     static func save(_ urls: Set<URL>) {
-        UserDefaultsStorage.save(Array(urls), forKey: key)
+        guard let data = try? JSONEncoder().encode(Array(urls)) else { return }
+        UserDefaults.standard.set(data, forKey: key)
     }
 
     static func isPinned(_ url: URL) -> Bool {

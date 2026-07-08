@@ -17,30 +17,22 @@ struct CodeView: NSViewRepresentable {
     let content: String
     let language: String
 
+    /// When non-nil, the JS search highlighter is triggered.
     var searchQuery: String? = nil
+
+    /// Called by the parent to navigate between matches.
     var searchAction: SearchAction? = nil
+
+    /// Called when search results update: (matchCount, currentMatch).
     var onSearchUpdate: ((Int, Int) -> Void)? = nil
 
     // MARK: - NSViewRepresentable
 
     func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let pref = WKWebpagePreferences()
-        pref.allowsContentJavaScript = true
-        config.defaultWebpagePreferences = pref
-
-        // Inject search functions via WKUserScript (available before the page loads)
-        let searchScript = WKUserScript(
-            source: SearchJS.functionsJS,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
-        )
-        config.userContentController.addUserScript(searchScript)
-
+        let config = buildConfig()
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
-        if #available(macOS 13.3, *) { webView.isInspectable = true }
         return webView
     }
 
@@ -48,6 +40,7 @@ struct CodeView: NSViewRepresentable {
         let oldKey = "\(context.coordinator.lastContentHash)-\(context.coordinator.lastLanguage)"
         let newKey = "\(content.hashValue)-\(language)"
 
+        // Only reload HTML when content/language actually changed
         if oldKey != newKey {
             guard let html = buildHTML() else {
                 webView.loadHTMLString("<p style='color:red'>Failed to load resources.</p>", baseURL: nil)
@@ -56,17 +49,27 @@ struct CodeView: NSViewRepresentable {
             context.coordinator.lastContentHash = content.hashValue
             context.coordinator.lastLanguage = language
             context.coordinator.pageReady = false
-            context.coordinator.pendingQuery = nil
             webView.loadHTMLString(html, baseURL: nil)
         }
 
-        // Store pending query so didFinish can retry
-        context.coordinator.pendingQuery = searchQuery
-        context.coordinator.pendingOnUpdate = onSearchUpdate
-
-        // Execute if page is ready
-        if context.coordinator.pageReady {
-            applySearch(webView: webView, coordinator: context.coordinator)
+        // Apply search if needed
+        let onUpdate = onSearchUpdate
+        if context.coordinator.pageReady, let q = searchQuery, !q.isEmpty {
+            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
+                if let json = result as? String,
+                   let data = json.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+                    context.coordinator.matchCount = obj["count"] ?? 0
+                    context.coordinator.currentIdx = obj["current"] ?? 0
+                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
+                }
+            }
+        } else if context.coordinator.pageReady, searchQuery?.isEmpty != false {
+            // Clear highlights
+            webView.evaluateJavaScript("doupiSearch('')")
+            context.coordinator.matchCount = 0
+            context.coordinator.currentIdx = 0
+            onUpdate?(0, 0)
         }
 
         // Handle navigation
@@ -75,14 +78,14 @@ struct CodeView: NSViewRepresentable {
             webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
                 if let idx = result as? Int {
                     context.coordinator.currentIdx = idx
-                    onSearchUpdate?(context.coordinator.matchCount, idx)
+                    onUpdate?(context.coordinator.matchCount, idx)
                 }
             }
         case .prev?:
             webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
                 if let idx = result as? Int {
                     context.coordinator.currentIdx = idx
-                    onSearchUpdate?(context.coordinator.matchCount, idx)
+                    onUpdate?(context.coordinator.matchCount, idx)
                 }
             }
         case nil: break
@@ -90,27 +93,6 @@ struct CodeView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-
-    /// Execute pending search on a ready page.
-    private func applySearch(webView: WKWebView, coordinator: Coordinator) {
-        let onUpdate = coordinator.pendingOnUpdate
-        if let q = coordinator.pendingQuery, !q.isEmpty {
-            webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                if let json = result as? String,
-                   let data = json.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                    coordinator.matchCount = obj["count"] ?? 0
-                    coordinator.currentIdx = obj["current"] ?? 0
-                    onUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                }
-            }
-        } else if coordinator.pendingQuery?.isEmpty != false {
-            webView.evaluateJavaScript("doupiSearch('')")
-            coordinator.matchCount = 0
-            coordinator.currentIdx = 0
-            onUpdate?(0, 0)
-        }
-    }
 
     // MARK: - Coordinator
 
@@ -120,8 +102,6 @@ struct CodeView: NSViewRepresentable {
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
-        var pendingQuery: String? = nil
-        var pendingOnUpdate: ((Int, Int) -> Void)? = nil
 
         func webView(_ webView: WKWebView,
                      didFail navigation: WKNavigation!,
@@ -129,28 +109,21 @@ struct CodeView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             pageReady = true
-            // Search functions were injected via WKUserScript — always available
-            if let q = pendingQuery, !q.isEmpty {
-                webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')") { result, _ in
-                    if let json = result as? String,
-                       let data = json.data(using: .utf8),
-                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
-                        self.matchCount = obj["count"] ?? 0
-                        self.currentIdx = obj["current"] ?? 0
-                        self.pendingOnUpdate?(obj["count"] ?? 0, obj["current"] ?? 0)
-                    }
-                }
-            } else if pendingQuery?.isEmpty != false {
-                webView.evaluateJavaScript("doupiSearch('')")
-                self.matchCount = 0
-                self.currentIdx = 0
-                self.pendingOnUpdate?(0, 0)
-            }
         }
     }
 
-    // MARK: - HTML builder
+    // MARK: - Private helpers
 
+    private func buildConfig() -> WKWebViewConfiguration {
+        let config = WKWebViewConfiguration()
+        let pref = WKWebpagePreferences()
+        pref.allowsContentJavaScript = true
+        config.defaultWebpagePreferences = pref
+        return config
+    }
+
+    /// Load highlight.min.js & highlight.min.css from the SPM resource bundle
+    /// and assemble a self-contained HTML document.
     private func buildHTML() -> String? {
         guard let cssURL = Bundle.module.url(forResource: "highlight.min", withExtension: "css"),
               let jsURL  = Bundle.module.url(forResource: "highlight.min", withExtension: "js"),
@@ -161,9 +134,6 @@ struct CodeView: NSViewRepresentable {
         let escaped  = escapeHTML(content)
         let language = self.language.isEmpty ? "plaintext" : self.language
 
-        // NOTE: SearchJS.functionsJS is NOT embedded inline here.
-        // It's injected via WKUserScript in makeNSView so it's available
-        // before the page even loads, and survives page navigations.
         return """
         <!DOCTYPE html>
         <html>
@@ -182,7 +152,16 @@ struct CodeView: NSViewRepresentable {
         }
         pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
         code { background: transparent !important; }
-        \(SearchJS.styleCSS)
+        mark.doupi-search {
+          background: rgba(93,154,50,0.35);
+          color: inherit;
+          border-radius: 2px;
+        }
+        mark.doupi-current {
+          background: rgba(93,154,50,0.65);
+          outline: 1px solid rgba(93,154,50,0.8);
+          border-radius: 2px;
+        }
         \(css)
         </style>
         </head>
@@ -197,7 +176,64 @@ struct CodeView: NSViewRepresentable {
         });
         </script>
         <script>
-        \(SearchJS.functionsJS)
+        var _doupiMatches = [];
+        var _doupiCurrent = -1;
+
+        function doupiSearch(query) {
+          // Clear old highlights
+          document.querySelectorAll('mark.doupi-search,mark.doupi-current').forEach(function(m) {
+            var parent = m.parentNode;
+            while (m.firstChild) parent.insertBefore(m.firstChild, m);
+            parent.removeChild(m);
+          });
+          _doupiMatches = [];
+          _doupiCurrent = -1;
+
+          if (!query) return JSON.stringify({count:0,current:-1});
+
+          var walker = document.createTreeWalker(document.body, 4/*SHOW_TEXT*/, null);
+          var qLower = query.toLowerCase();
+          var node;
+          var ranges = [];
+
+          while (node = walker.nextNode()) {
+            // Skip nodes inside <mark>, <script>, <style>
+            var p = node.parentNode;
+            if (p && (p.nodeName === 'MARK' || p.nodeName === 'SCRIPT' || p.nodeName === 'STYLE')) continue;
+
+            var text = node.textContent;
+            var idx = text.toLowerCase().indexOf(qLower);
+            if (idx >= 0) {
+              var range = document.createRange();
+              range.setStart(node, idx);
+              range.setEnd(node, idx + query.length);
+              try {
+                var mark = document.createElement('mark');
+                mark.className = 'doupi-search';
+                range.surroundContents(mark);
+                _doupiMatches.push(mark);
+                walker.currentNode = mark;
+              } catch(e) {}
+            }
+          }
+          return JSON.stringify({count:_doupiMatches.length,current:_doupiCurrent});
+        }
+
+        function doupiNavigate(dir) {
+          if (_doupiMatches.length === 0) return -1;
+          // Remove current highlight
+          if (_doupiCurrent >= 0 && _doupiCurrent < _doupiMatches.length) {
+            _doupiMatches[_doupiCurrent].className = 'doupi-search';
+          }
+          // Advance
+          _doupiCurrent += dir;
+          if (_doupiCurrent >= _doupiMatches.length) _doupiCurrent = 0;
+          if (_doupiCurrent < 0) _doupiCurrent = _doupiMatches.length - 1;
+          // Highlight current
+          _doupiMatches[_doupiCurrent].className = 'doupi-current';
+          _doupiMatches[_doupiCurrent].scrollIntoView({behavior:'smooth',block:'center'});
+          return _doupiCurrent;
+        }
         </script>
         </body>
         </html>

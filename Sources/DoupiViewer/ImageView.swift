@@ -1,8 +1,14 @@
 import AppKit
 import SwiftUI
 
+/// Shared image cache to avoid repeated disk reads.
+private let imageCache: NSCache<NSURL, NSImage> = {
+    let cache = NSCache<NSURL, NSImage>()
+    cache.countLimit = 64
+    return cache
+}()
+
 /// Displays common image formats via NSImageView.
-/// Uses ImageCache.shared for transparent memory caching.
 struct ImageView: NSViewRepresentable {
 
     let url: URL
@@ -16,33 +22,14 @@ struct ImageView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSImageView, context: Context) {
-        let targetURL = url
-        context.coordinator.load(url: targetURL) { image in
-            nsView.image = image
+        let nsURL = url as NSURL
+        if let cached = imageCache.object(forKey: nsURL) {
+            nsView.image = cached
+            return
         }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    class Coordinator {
-        private var currentTask: Task<Void, Never>?
-
-        func load(url: URL, completion: @escaping (NSImage?) -> Void) {
-            currentTask?.cancel()
-            currentTask = Task { @MainActor in
-                // Check cache
-                if let cached = await ImageCache.shared.image(for: url) {
-                    completion(cached)
-                    return
-                }
-                // Load from disk on background
-                let image = await Task.detached(priority: .userInitiated) {
-                    NSImage(contentsOf: url)
-                }.value
-                guard let image else { completion(nil); return }
-                await ImageCache.shared.setImage(image, for: url)
-                completion(image)
-            }
+        if let image = NSImage(contentsOf: url) {
+            imageCache.setObject(image, forKey: nsURL)
+            nsView.image = image
         }
     }
 }
