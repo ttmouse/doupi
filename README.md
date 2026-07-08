@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="Sources/DoupiViewer/Resources/AppIcon.icns" width="96" height="96" alt="Doupi Viewer">
   <h1>doupi</h1>
   <p>macOS 原生文件查看器 — 拖拽或打开文件，按类型分发到不同渲染器</p>
   <p>
