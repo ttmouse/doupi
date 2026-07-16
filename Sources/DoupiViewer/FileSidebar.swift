@@ -459,7 +459,7 @@ struct FileSidebar: View {
                         },
                         isHovered: isRecentHovered
                     )
-                    .frame(height: min(CGFloat(recentFiles.count) * 31, 155))
+                    .frame(minHeight: 31, maxHeight: .infinity)
                     .onHover { isRecentHovered = $0 }
                 }
             }
