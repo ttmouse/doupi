@@ -65,6 +65,8 @@ struct FileSidebar: View {
     @State private var isTagFilterExpanded = true
     @State private var isFormatHeaderHovered = false
     @State private var isTagHeaderHovered = false
+    @State private var isLibraryHeaderHovered = false
+    @State private var isRecentHeaderHovered = false
     @State private var isLibraryHovered = false
     @State private var isRecentHovered = false
     @State private var isLibraryExpanded = true
@@ -193,20 +195,20 @@ struct FileSidebar: View {
         VStack(spacing: 3) {
             HStack(spacing: 5) {
                 Button { isLibraryExpanded.toggle() } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Image(systemName: isLibraryExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.appMuted)
+                            .frame(width: 8)
                         Text("文件夹")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.appText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.appMuted)
                         Spacer()
                         Text("\(libraryFolders.count)")
                             .font(.system(size: 10))
                             .foregroundColor(.appMuted)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -220,12 +222,16 @@ struct FileSidebar: View {
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.appMuted)
-                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .help("新建 Doupi 文件夹")
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isLibraryHeaderHovered ? Color.appHoverBg : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .padding(.horizontal, 4)
+            .onHover { isLibraryHeaderHovered = $0 }
 
             if isLibraryExpanded && libraryFolders.isEmpty {
                 VStack(spacing: 5) {
@@ -414,24 +420,29 @@ struct FileSidebar: View {
     private var recentSection: some View {
         VStack(spacing: 3) {
             Button { isRecentExpanded.toggle() } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Image(systemName: isRecentExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundColor(.appMuted)
+                        .frame(width: 8)
                     Text("最近打开")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.appText)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.appMuted)
                     Spacer()
                     Text("\(recentFiles.count)")
                         .font(.system(size: 10))
                         .foregroundColor(.appMuted)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
+                .background(isRecentHeaderHovered ? Color.appHoverBg : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .padding(.horizontal, 4)
             }
             .buttonStyle(.plain)
+            .onHover { isRecentHeaderHovered = $0 }
 
             if isRecentExpanded {
                 if recentFiles.isEmpty {
