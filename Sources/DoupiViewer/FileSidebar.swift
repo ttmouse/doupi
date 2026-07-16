@@ -763,7 +763,7 @@ private struct LibraryFileRow: View {
         Button {
             if file.isAvailable { onSelect() }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 Image(systemName: file.isAvailable ? file.sourceURL.sidebarIconName : "exclamationmark.triangle")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(file.isAvailable ? .appMuted : .orange)
