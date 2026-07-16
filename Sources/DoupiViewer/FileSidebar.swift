@@ -695,12 +695,13 @@ private struct LibraryFolderBranch: View {
             Button {
                 if hasExpandableContent { isExpanded.toggle() }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: depth > 0 ? 3 : 6) {
                     Image(systemName: isExpanded ? "folder.fill" : "folder")
                         .font(.system(size: 13, weight: .medium))
                         .imageScale(.small)
                         .foregroundColor(.appMuted)
                         .frame(width: 18, alignment: .trailing)
+                        .offset(x: depth > 0 ? -3 : 0)
                     Text(folder.name)
                         .font(.system(size: 13))
                         .foregroundColor(.appText)
@@ -770,12 +771,13 @@ private struct LibraryFileRow: View {
         Button {
             if file.isAvailable { onSelect() }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: depth > 0 ? 3 : 6) {
                 Image(systemName: file.isAvailable ? file.sourceURL.sidebarIconName : "exclamationmark.triangle")
                     .font(.system(size: 13, weight: .medium))
                     .imageScale(.small)
                     .foregroundColor(file.isAvailable ? (isSelected ? .appAccent : .appMuted) : .orange)
                     .frame(width: 18, alignment: .trailing)
+                    .offset(x: depth > 0 ? -3 : 0)
                 Text(file.name)
                     .font(.system(size: 13))
                     .foregroundColor(file.isAvailable ? .appText : .appMuted)
