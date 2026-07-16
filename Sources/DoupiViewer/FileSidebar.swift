@@ -625,17 +625,26 @@ private struct LibraryFolderBranch: View {
     let onRemoveFile: (UUID, UUID) -> Void
     @State private var isExpanded = true
     @State private var isHovering = false
+    @FocusState private var isFocused: Bool
+
+    private var hasExpandableContent: Bool {
+        !folder.folders.isEmpty || !folder.files.isEmpty
+    }
+
+    private var showsDisclosure: Bool {
+        hasExpandableContent && (isHovering || isFocused)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Button { isExpanded.toggle() } label: {
+            Button {
+                if hasExpandableContent { isExpanded.toggle() }
+            } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.appMuted)
-                        .frame(width: 10)
-                    Image(systemName: isExpanded ? "folder.fill" : "folder")
-                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: showsDisclosure
+                        ? (isExpanded ? "chevron.down" : "chevron.right")
+                        : (isExpanded ? "folder.fill" : "folder"))
+                        .font(.system(size: showsDisclosure ? 9 : 12, weight: .semibold))
                         .foregroundColor(.appMuted)
                         .frame(width: 18)
                     Text(folder.name)
@@ -653,6 +662,7 @@ private struct LibraryFolderBranch: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focused($isFocused)
             .onHover { isHovering = $0 }
 
             if isExpanded {
