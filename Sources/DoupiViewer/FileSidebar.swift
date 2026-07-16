@@ -65,6 +65,7 @@ struct FileSidebar: View {
     @State private var isTagFilterExpanded = true
     @State private var isFormatHeaderHovered = false
     @State private var isTagHeaderHovered = false
+    @State private var isLibraryHovered = false
     @State private var isLibraryExpanded = true
     @State private var isRecentExpanded = true
     @State private var libraryFolders: [LibraryFolder] = []
@@ -96,9 +97,16 @@ struct FileSidebar: View {
         VStack(spacing: 0) {
             searchAndFilterSection
                 .id(tagVersion)
-            librarySection
-                .frame(maxHeight: .infinity)
+            if isLibraryExpanded {
+                librarySection
+                    .frame(maxHeight: .infinity)
+            } else {
+                librarySection
+            }
             recentSection
+            if !isLibraryExpanded {
+                Spacer(minLength: 0)
+            }
         }
         .background(isDropTargeted ? Color.appAccent.opacity(0.08) : Color.appInfoBg)
         .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
@@ -197,6 +205,7 @@ struct FileSidebar: View {
                             .foregroundColor(.appMuted)
                     }
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -210,12 +219,12 @@ struct FileSidebar: View {
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.appMuted)
+                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .help("新建 Doupi 文件夹")
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
 
             if isLibraryExpanded && libraryFolders.isEmpty {
                 VStack(spacing: 5) {
@@ -244,8 +253,8 @@ struct FileSidebar: View {
                 .padding(.vertical, 20)
                 Spacer()
             } else if isLibraryExpanded {
-                ScrollView {
-                    LibraryFolderTree(
+                SidebarScrollView(
+                    content: LibraryFolderTree(
                         folders: filteredLibraryFolders,
                         selectedURL: selectedURL,
                         onSelectFile: { selectedURL = $0 },
@@ -270,8 +279,10 @@ struct FileSidebar: View {
                             LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
                         }
                     )
-                    .padding(.horizontal, 4)
-                }
+                    .padding(.horizontal, 4),
+                    isHovered: isLibraryHovered
+                )
+                .onHover { isLibraryHovered = $0 }
             }
         }
         .background(Color.appSurface.opacity(0.62))
@@ -416,6 +427,8 @@ struct FileSidebar: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -593,9 +606,38 @@ private struct LibraryFolderBranch: View {
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
     @State private var isExpanded = true
+    @State private var isHovering = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        VStack(alignment: .leading, spacing: 2) {
+            Button { isExpanded.toggle() } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.appMuted)
+                        .frame(width: 10)
+                    Image(systemName: isExpanded ? "folder.fill" : "folder")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.appMuted)
+                        .frame(width: 18)
+                    Text(folder.name)
+                        .font(.system(size: 13))
+                        .foregroundColor(.appText)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 7)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isHovering ? Color.appHoverBg : .clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+
+            if isExpanded {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(folder.folders) { child in
                     LibraryFolderBranch(
@@ -639,12 +681,7 @@ private struct LibraryFolderBranch: View {
                 }
             }
             .padding(.leading, 12)
-        } label: {
-            Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.appText)
-                .lineLimit(1)
-                .padding(.vertical, 5)
+            }
         }
         .contextMenu {
             Button("新建子文件夹") { onCreateChildFolder(folder) }
