@@ -684,32 +684,12 @@ private struct LibraryFolderBranch: View {
                     )
                 }
                 ForEach(folder.files) { file in
-                    Button {
-                        if file.isAvailable { onSelectFile(file.sourceURL) }
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: file.isAvailable ? "doc" : "exclamationmark.triangle")
-                                .font(.system(size: 11))
-                                .foregroundColor(file.isAvailable ? .appMuted : .orange)
-                                .frame(width: 16)
-                            Text(file.name)
-                                .font(.system(size: 12))
-                                .foregroundColor(file.isAvailable ? .appText : .appMuted)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL ? Color.appSelectedBg : .clear)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
-                    .contextMenu {
-                        Button("从文件夹移除") { onRemoveFile(folder.id, file.id) }
-                    }
+                    LibraryFileRow(
+                        file: file,
+                        isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
+                        onSelect: { onSelectFile(file.sourceURL) },
+                        onRemove: { onRemoveFile(folder.id, file.id) }
+                    )
                 }
             }
             .padding(.leading, 12)
@@ -723,6 +703,45 @@ private struct LibraryFolderBranch: View {
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers, _ in
             onImportIntoFolder(folder.id, providers)
+        }
+    }
+}
+
+private struct LibraryFileRow: View {
+    let file: LibraryFile
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onRemove: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            if file.isAvailable { onSelect() }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: file.isAvailable ? "doc" : "exclamationmark.triangle")
+                    .font(.system(size: 11))
+                    .foregroundColor(file.isAvailable ? .appMuted : .orange)
+                    .frame(width: 16)
+                Text(file.name)
+                    .font(.system(size: 12))
+                    .foregroundColor(file.isAvailable ? .appText : .appMuted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
+        .contextMenu {
+            Button("从文件夹移除") { onRemove() }
         }
     }
 }
