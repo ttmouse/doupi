@@ -223,7 +223,7 @@ struct FileSidebar: View {
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.appMuted)
                             .frame(width: 8)
-                        Text("文件夹")
+                        Text("文件")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.appMuted)
                         Spacer()
