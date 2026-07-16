@@ -66,6 +66,7 @@ struct FileSidebar: View {
     @State private var isFormatHeaderHovered = false
     @State private var isTagHeaderHovered = false
     @State private var isLibraryHovered = false
+    @State private var isRecentHovered = false
     @State private var isLibraryExpanded = true
     @State private var isRecentExpanded = true
     @State private var libraryFolders: [LibraryFolder] = []
@@ -441,19 +442,25 @@ struct FileSidebar: View {
                         .padding(.horizontal, 12)
                         .padding(.bottom, 9)
                 } else {
-                    ForEach(Array(recentFiles.prefix(5)), id: \.self) { url in
-                        SidebarRow(
-                            url: url,
-                            isSelected: selectedURL == url,
-                            isKeyboardFocused: false,
-                            isPinned: pinnedURLs.contains(url.standardizedFileURL),
-                            onTogglePin: { togglePin(url) },
-                            onClearKeyboardFocus: { },
-                            action: { selectedURL = url }
-                        )
-                        .contextMenu { recentContextMenu(for: url) }
-                    }
-                    .padding(.bottom, 4)
+                    SidebarScrollView(
+                        content: VStack(spacing: 0) {
+                            ForEach(recentFiles, id: \.self) { url in
+                                SidebarRow(
+                                    url: url,
+                                    isSelected: selectedURL == url,
+                                    isKeyboardFocused: false,
+                                    isPinned: pinnedURLs.contains(url.standardizedFileURL),
+                                    onTogglePin: { togglePin(url) },
+                                    onClearKeyboardFocus: { },
+                                    action: { selectedURL = url }
+                                )
+                                .contextMenu { recentContextMenu(for: url) }
+                            }
+                        },
+                        isHovered: isRecentHovered
+                    )
+                    .frame(height: min(CGFloat(recentFiles.count) * 31, 155))
+                    .onHover { isRecentHovered = $0 }
                 }
             }
         }
