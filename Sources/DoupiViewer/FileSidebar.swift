@@ -457,7 +457,7 @@ struct FileSidebar: View {
                 }
             }
         }
-        .background(Color.appSurface.opacity(0.62))
+        .background(Color.appInfoBg)
     }
 
     // MARK: - Helpers
