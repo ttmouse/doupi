@@ -39,8 +39,6 @@ struct ContentView: View {
                         loadFile(url: url)
                     }
 
-                Divider()
-                    .overlay(Color.appBorder)
             }
 
             // Content area — width naturally excludes the sidebar when visible
