@@ -766,7 +766,8 @@ private struct LibraryFileRow: View {
             HStack(spacing: 4) {
                 Image(systemName: file.isAvailable ? file.sourceURL.sidebarIconName : "exclamationmark.triangle")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(file.isAvailable ? .appMuted : .orange)
+                    .imageScale(.small)
+                    .foregroundColor(file.isAvailable ? (isSelected ? .appAccent : .appMuted) : .orange)
                     .frame(width: 18)
                 Text(file.name)
                     .font(.system(size: 13))
@@ -783,7 +784,11 @@ private struct LibraryFileRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
         .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
         .contextMenu {
             Button("从文件夹移除") { onRemove() }
@@ -805,7 +810,7 @@ private struct SidebarRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             Image(systemName: url.sidebarIconName)
                 .font(.system(size: 13, weight: .medium))
                 .imageScale(.small)
