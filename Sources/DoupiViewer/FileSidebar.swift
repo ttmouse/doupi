@@ -45,6 +45,26 @@ enum FileFormat: String, CaseIterable, Hashable {
     }
 }
 
+private extension URL {
+    var sidebarIconName: String {
+        switch pathExtension.lowercased() {
+        case "html", "htm":  return "globe"
+        case "swift":        return "swift"
+        case "pdf":          return "doc.richtext"
+        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
+        case "css", "scss", "less":  return "paintbrush"
+        case "json":         return "curlybraces"
+        case "md", "markdown": return "doc.text"
+        case "png", "jpg", "jpeg", "gif", "webp": return "photo"
+        case "yaml", "yml", "toml": return "gearshape"
+        case "py":           return "play.rectangle"
+        case "sh", "bash", "zsh": return "terminal"
+        case "sql":          return "tablecells"
+        default:              return "doc"
+        }
+    }
+}
+
 /// Sidebar with recent files history.
 struct FileSidebar: View {
 
@@ -720,7 +740,7 @@ private struct LibraryFileRow: View {
             if file.isAvailable { onSelect() }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: file.isAvailable ? "doc" : "exclamationmark.triangle")
+                Image(systemName: file.isAvailable ? file.sourceURL.sidebarIconName : "exclamationmark.triangle")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(file.isAvailable ? .appMuted : .orange)
                     .frame(width: 18)
@@ -762,7 +782,7 @@ private struct SidebarRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: iconName)
+            Image(systemName: url.sidebarIconName)
                 .font(.system(size: 13, weight: .medium))
                 .imageScale(.small)
                 .foregroundColor(isSelected ? .appAccent : .appMuted)
@@ -813,23 +833,6 @@ private struct SidebarRow: View {
         return .clear
     }
 
-    private var iconName: String {
-        switch url.pathExtension.lowercased() {
-        case "html", "htm":  return "globe"
-        case "swift":        return "swift"
-        case "pdf":          return "doc.richtext"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        case "css", "scss", "less":  return "paintbrush"
-        case "json":         return "curlybraces"
-        case "md", "markdown": return "doc.text"
-        case "png", "jpg", "jpeg", "gif", "webp": return "photo"
-        case "yaml", "yml", "toml": return "gearshape"
-        case "py":           return "play.rectangle"
-        case "sh", "bash", "zsh": return "terminal"
-        case "sql":          return "tablecells"
-        default:             return "doc"
-        }
-    }
 }
 
 // MARK: - Format Row
