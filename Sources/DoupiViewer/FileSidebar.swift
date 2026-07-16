@@ -116,6 +116,20 @@ struct FileSidebar: View {
         libraryFolders.flatMap(allURLs)
     }
 
+    private var filteredRootFiles: (folderID: UUID, files: [LibraryFile])? {
+        guard let inbox = filteredLibraryFolders.first(where: isSystemInbox) else { return nil }
+        return (inbox.id, inbox.files)
+    }
+
+    private var filteredTopLevelFolders: [LibraryFolder] {
+        filteredLibraryFolders.filter { !isSystemInbox($0) }
+    }
+
+    private var rootItemCount: Int {
+        libraryFolders.filter { !isSystemInbox($0) }.count
+            + (libraryFolders.first(where: isSystemInbox)?.files.count ?? 0)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             searchAndFilterSection
@@ -227,7 +241,7 @@ struct FileSidebar: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.appMuted)
                         Spacer()
-                        Text("\(libraryFolders.count)")
+                        Text("\(rootItemCount)")
                             .font(.system(size: 10))
                             .foregroundColor(.appMuted)
                     }
@@ -267,7 +281,7 @@ struct FileSidebar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 Spacer()
-            } else if isLibraryExpanded && filteredLibraryFolders.isEmpty {
+            } else if isLibraryExpanded && filteredTopLevelFolders.isEmpty && filteredRootFiles?.files.isEmpty != false {
                 VStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .light))
@@ -284,31 +298,45 @@ struct FileSidebar: View {
                 Spacer()
             } else if isLibraryExpanded {
                 SidebarScrollView(
-                    content: LibraryFolderTree(
-                        folders: filteredLibraryFolders,
-                        selectedURL: selectedURL,
-                        onSelectFile: { selectedURL = $0 },
-                        onRenameFolder: { folder in
-                            renamingFolderID = folder.id
-                            folderName = folder.name
-                            showFolderNameAlert = true
-                        },
-                        onRemoveFolder: { folder in
-                            folderPendingDeletion = folder
-                        },
-                        onImportIntoFolder: { folderID, providers in
-                            handleDrop(providers, into: folderID)
-                        },
-                        onCreateChildFolder: { folder in
-                            renamingFolderID = nil
-                            newFolderParentID = folder.id
-                            folderName = ""
-                            showFolderNameAlert = true
-                        },
-                        onRemoveFile: { folderID, fileID in
-                            LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
+                    content: VStack(spacing: 0) {
+                        if let root = filteredRootFiles {
+                            ForEach(root.files) { file in
+                                LibraryFileRow(
+                                    file: file,
+                                    isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
+                                    onSelect: { selectedURL = file.sourceURL },
+                                    onRemove: {
+                                        LibraryFolders.removeFile(file.id, from: root.folderID, in: &libraryFolders)
+                                    }
+                                )
+                            }
                         }
-                    )
+                        LibraryFolderTree(
+                            folders: filteredTopLevelFolders,
+                            selectedURL: selectedURL,
+                            onSelectFile: { selectedURL = $0 },
+                            onRenameFolder: { folder in
+                                renamingFolderID = folder.id
+                                folderName = folder.name
+                                showFolderNameAlert = true
+                            },
+                            onRemoveFolder: { folder in
+                                folderPendingDeletion = folder
+                            },
+                            onImportIntoFolder: { folderID, providers in
+                                handleDrop(providers, into: folderID)
+                            },
+                            onCreateChildFolder: { folder in
+                                renamingFolderID = nil
+                                newFolderParentID = folder.id
+                                folderName = ""
+                                showFolderNameAlert = true
+                            },
+                            onRemoveFile: { folderID, fileID in
+                                LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
+                            }
+                        )
+                    }
                     .padding(.horizontal, 4),
                     isHovered: isLibraryHovered
                 )
@@ -507,6 +535,10 @@ struct FileSidebar: View {
 
     private func allURLs(_ folder: LibraryFolder) -> [URL] {
         folder.files.map(\.sourceURL) + folder.folders.flatMap(allURLs)
+    }
+
+    private func isSystemInbox(_ folder: LibraryFolder) -> Bool {
+        folder.name == "未分类" && folder.folders.isEmpty
     }
 
     private func filterFolder(_ folder: LibraryFolder, queryMatchedByAncestor: Bool) -> LibraryFolder? {
