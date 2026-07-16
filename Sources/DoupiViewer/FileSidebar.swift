@@ -718,19 +718,19 @@ private struct LibraryFileRow: View {
         Button {
             if file.isAvailable { onSelect() }
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: file.isAvailable ? "doc" : "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(file.isAvailable ? .appMuted : .orange)
-                    .frame(width: 16)
+                    .frame(width: 18)
                 Text(file.name)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(file.isAvailable ? .appText : .appMuted)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 7)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: 5)
                     .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
