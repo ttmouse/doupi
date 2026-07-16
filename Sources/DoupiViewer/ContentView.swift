@@ -192,7 +192,6 @@ struct ContentView: View {
             let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
             var folders = LibraryFolders.load()
             LibraryFolders.apply(imported, into: &folders)
-            FileHistory.bulkAdd(renderableURLs)
             sidebarRefresh += 1
             if let first = renderableURLs.first {
                 loadFile(url: first)
@@ -212,11 +211,10 @@ struct ContentView: View {
             fileInfo = FileInfo.from(url: url)
             return
         }
-        let isNew = !FileHistory.contains(url)
         fileURL = url
         fileInfo = info
         FileHistory.add(url)
-        if isNew { sidebarRefresh += 1 }
+        sidebarRefresh += 1
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -228,7 +226,6 @@ struct ContentView: View {
             await MainActor.run {
                 var folders = LibraryFolders.load()
                 LibraryFolders.apply(imported, into: &folders)
-                FileHistory.bulkAdd(renderableURLs)
                 sidebarRefresh += 1
                 if let first = renderableURLs.first {
                     loadFile(url: first)

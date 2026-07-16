@@ -15,13 +15,13 @@ enum FileFormat: String, CaseIterable, Hashable {
 
     var icon: String {
         switch self {
-        case .html:     return "globe"
-        case .markdown: return "doc.text"
-        case .code:     return "chevron.left.forwardslash.chevron.right"
-        case .image:    return "photo"
-        case .pdf:      return "doc.richtext"
-        case .text:     return "doc.plaintext"
-        case .tsx:      return "curlybraces"
+        case .html:     return "html"
+        case .markdown: return "markdown"
+        case .code:     return "html"
+        case .image:    return "image"
+        case .pdf:      return "pdf"
+        case .text:     return "default"
+        case .tsx:      return "react"
         }
     }
     static func `for`(_ url: URL) -> FileFormat? {
@@ -46,22 +46,104 @@ enum FileFormat: String, CaseIterable, Hashable {
 }
 
 private extension URL {
-    var sidebarIconName: String {
+    var setiIconName: String {
         switch pathExtension.lowercased() {
-        case "html", "htm":  return "globe"
+        case "html", "htm":  return "html"
         case "swift":        return "swift"
-        case "pdf":          return "doc.richtext"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        case "css", "scss", "less":  return "paintbrush"
-        case "json":         return "curlybraces"
-        case "md", "markdown": return "doc.text"
-        case "png", "jpg", "jpeg", "gif", "webp": return "photo"
-        case "yaml", "yml", "toml": return "gearshape"
-        case "py":           return "play.rectangle"
-        case "sh", "bash", "zsh": return "terminal"
-        case "sql":          return "tablecells"
-        default:              return "doc"
+        case "pdf":          return "pdf"
+        case "js", "mjs", "cjs": return "javascript"
+        case "ts", "mts", "cts": return "typescript"
+        case "tsx", "jsx":  return "react"
+        case "css", "scss", "less": return "css"
+        case "json":         return "json"
+        case "md", "markdown": return "markdown"
+        case "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "ico": return "image"
+        case "yaml", "yml": return "yml"
+        case "toml":         return "config"
+        case "py":           return "python"
+        case "sh", "bash", "zsh": return "shell"
+        case "sql":          return "db"
+        case "c", "h":      return "c"
+        case "cpp", "hpp":  return "cpp"
+        case "go":           return "go"
+        case "rs":           return "rust"
+        case "rb":           return "ruby"
+        case "java", "kt", "scala": return "java"
+        case "php":          return "php"
+        case "lua":          return "lua"
+        case "dart":         return "dart"
+        case "svelte":       return "svelte"
+        case "vue":          return "vue"
+        case "xml":          return "xml"
+        default:              return "default"
         }
+    }
+}
+
+private enum SetiIconStore {
+    private static let cache = NSCache<NSString, NSImage>()
+
+    static func image(named name: String) -> NSImage? {
+        let key = name as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        guard let url = Bundle.module.url(
+            forResource: "seti-\(name)",
+            withExtension: "svg",
+            subdirectory: "Resources/SetiIcons"
+        ), let image = NSImage(contentsOf: url) else { return nil }
+        image.isTemplate = true
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}
+
+private struct SetiFileIcon: View {
+    let name: String
+    let color: Color
+
+    var body: some View {
+        Group {
+            if let image = SetiIconStore.image(named: name) {
+                Image(nsImage: image)
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .foregroundStyle(color)
+            } else {
+                Image(systemName: "doc")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(color)
+            }
+        }
+        .frame(width: 18, height: 18)
+        .frame(width: 18, alignment: .trailing)
+        .offset(x: 2)
+    }
+}
+
+private struct FileTypeIcon: View {
+    let url: URL
+    let color: Color
+
+    var body: some View {
+        SetiFileIcon(name: url.setiIconName, color: color)
+    }
+}
+
+/// Gives every sidebar symbol the same visual canvas. SF Symbols have different
+/// intrinsic aspect ratios, so a shared font size alone does not look uniform.
+private struct SidebarIcon: View {
+    let name: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: name)
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(color)
+            .frame(width: 13, height: 13)
+            .frame(width: 18, alignment: .trailing)
     }
 }
 
@@ -125,9 +207,16 @@ struct FileSidebar: View {
         filteredLibraryFolders.filter { !isSystemInbox($0) }
     }
 
-    private var rootItemCount: Int {
-        libraryFolders.filter { !isSystemInbox($0) }.count
-            + (libraryFolders.first(where: isSystemInbox)?.files.count ?? 0)
+    private var filteredPinnedURLs: [URL] {
+        pinnedURLs
+            .filter { url in
+                let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+                let matchesText = query.isEmpty || url.lastPathComponent.localizedCaseInsensitiveContains(query)
+                let matchesFormat = selectedFormat == nil || FileFormat.for(url) == selectedFormat
+                let matchesTag = selectedTag == nil || FileTags.tags(for: url).contains(selectedTag!)
+                return matchesText && matchesFormat && matchesTag
+            }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
     var body: some View {
@@ -233,17 +322,15 @@ struct FileSidebar: View {
             HStack(spacing: 5) {
                 Button { isLibraryExpanded.toggle() } label: {
                     HStack(spacing: 4) {
+                        Text("文件")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.appMuted)
                         Image(systemName: isLibraryExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.appMuted)
                             .frame(width: 8)
-                        Text("文件")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.appMuted)
+                            .opacity(isLibraryHeaderHovered ? 1 : 0)
                         Spacer()
-                        Text("\(rootItemCount)")
-                            .font(.system(size: 10))
-                            .foregroundColor(.appMuted)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
@@ -256,7 +343,7 @@ struct FileSidebar: View {
                     folderName = ""
                     showFolderNameAlert = true
                 } label: {
-                    Image(systemName: "folder.badge.plus")
+                    Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.appMuted)
                 }
@@ -265,7 +352,7 @@ struct FileSidebar: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(isLibraryHeaderHovered ? Color.appHoverBg : Color.clear)
+            .background(Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .padding(.horizontal, 4)
             .onHover { isLibraryHeaderHovered = $0 }
@@ -299,18 +386,15 @@ struct FileSidebar: View {
             } else if isLibraryExpanded {
                 SidebarScrollView(
                     content: VStack(spacing: 0) {
-                        if let root = filteredRootFiles {
-                            ForEach(root.files) { file in
-                                LibraryFileRow(
-                                    file: file,
-                                    depth: 0,
-                                    isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
-                                    onSelect: { selectedURL = file.sourceURL },
-                                    onRemove: {
-                                        LibraryFolders.removeFile(file.id, from: root.folderID, in: &libraryFolders)
-                                    }
-                                )
-                            }
+                        if !filteredPinnedURLs.isEmpty {
+                            PinnedFilesBranch(
+                                urls: filteredPinnedURLs,
+                                selectedURL: selectedURL,
+                                onSelect: { selectedURL = $0 },
+                                onNewTag: beginCreatingTag,
+                                onMetadataChanged: refreshMetadata,
+                                onTogglePin: togglePin
+                            )
                         }
                         LibraryFolderTree(
                             folders: filteredTopLevelFolders,
@@ -335,8 +419,29 @@ struct FileSidebar: View {
                             },
                             onRemoveFile: { folderID, fileID in
                                 LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
-                            }
+                            },
+                            pinnedURLs: pinnedURLs,
+                            onNewTag: beginCreatingTag,
+                            onMetadataChanged: refreshMetadata,
+                            onTogglePin: togglePin
                         )
+                        if let root = filteredRootFiles {
+                            ForEach(root.files) { file in
+                                LibraryFileRow(
+                                    file: file,
+                                    depth: 0,
+                                    isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
+                                    onSelect: { selectedURL = file.sourceURL },
+                                    onRemove: {
+                                        LibraryFolders.removeFile(file.id, from: root.folderID, in: &libraryFolders)
+                                    },
+                                    isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
+                                    onNewTag: beginCreatingTag,
+                                    onMetadataChanged: refreshMetadata,
+                                    onTogglePin: togglePin
+                                )
+                            }
+                        }
                     }
                     .padding(.horizontal, 4),
                     isHovered: isLibraryHovered
@@ -382,18 +487,19 @@ struct FileSidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 Button(action: { isFormatFilterExpanded.toggle() }) {
                     HStack(spacing: 4) {
+                        Text("格式筛选")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.appMuted)
                         Image(systemName: isFormatFilterExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.appMuted)
                             .frame(width: 8)
-                        Text("格式筛选")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.appMuted)
+                            .opacity(isFormatHeaderHovered ? 1 : 0)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(isFormatHeaderHovered ? Color.appHoverBg : Color.clear)
+                    .background(Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .padding(.horizontal, 4)
                 }
@@ -403,7 +509,7 @@ struct FileSidebar: View {
                 if isFormatFilterExpanded {
                     FormatRow(
                         label: "全部",
-                        icon: "line.horizontal.3.decrease.circle",
+                        icon: "default",
                         count: allLibraryURLs.count,
                         isSelected: selectedFormat == nil
                     ) { selectedFormat = nil }
@@ -426,18 +532,19 @@ struct FileSidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 Button(action: { isTagFilterExpanded.toggle() }) {
                     HStack(spacing: 4) {
+                        Text("标签筛选")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.appMuted)
                         Image(systemName: isTagFilterExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.appMuted)
                             .frame(width: 8)
-                        Text("标签筛选")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.appMuted)
+                            .opacity(isTagHeaderHovered ? 1 : 0)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(isTagHeaderHovered ? Color.appHoverBg : Color.clear)
+                    .background(Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .padding(.horizontal, 4)
                 }
@@ -474,23 +581,21 @@ struct FileSidebar: View {
         VStack(spacing: 3) {
             Button { isRecentExpanded.toggle() } label: {
                 HStack(spacing: 4) {
+                    Text("最近打开")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.appMuted)
                     Image(systemName: isRecentExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundColor(.appMuted)
                         .frame(width: 8)
-                    Text("最近打开")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.appMuted)
+                        .opacity(isRecentHeaderHovered ? 1 : 0)
                     Spacer()
-                    Text("\(recentFiles.count)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.appMuted)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .background(isRecentHeaderHovered ? Color.appHoverBg : Color.clear)
+                .background(Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .padding(.horizontal, 4)
             }
@@ -513,8 +618,6 @@ struct FileSidebar: View {
                                     url: url,
                                     isSelected: selectedURL == url,
                                     isKeyboardFocused: false,
-                                    isPinned: pinnedURLs.contains(url.standardizedFileURL),
-                                    onTogglePin: { togglePin(url) },
                                     onClearKeyboardFocus: { },
                                     action: { selectedURL = url }
                                 )
@@ -568,33 +671,27 @@ struct FileSidebar: View {
         selectedTag = nil
     }
 
+    private func beginCreatingTag(for url: URL) {
+        pendingTagURL = url
+        newTagName = ""
+        showNewTagAlert = true
+    }
+
+    private func refreshMetadata() {
+        tagVersion = UUID()
+    }
+
     @ViewBuilder
     private func recentContextMenu(for url: URL) -> some View {
-        if !FileTags.allTags().isEmpty {
-            Menu("打标") {
-                ForEach(FileTags.allTags(), id: \.self) { tag in
-                    let tagged = FileTags.tags(for: url).contains(tag)
-                    Button {
-                        FileTags.toggleTag(tag, for: url)
-                        tagVersion = UUID()
-                    } label: {
-                        if tagged { Label(tag, systemImage: "checkmark") } else { Text(tag) }
-                    }
-                }
-            }
-            Divider()
-        }
-        Button("新建标签...") {
-            pendingTagURL = url
-            newTagName = ""
-            showNewTagAlert = true
-        }
-        Divider()
-        Button(pinnedURLs.contains(url.standardizedFileURL) ? "取消置顶" : "置顶") {
-            togglePin(url)
-        }
-        Divider()
-        Button("从最近打开移除") { removeFromRecent(url) }
+        FileItemContextMenu(
+            url: url,
+            isPinned: pinnedURLs.contains(url.standardizedFileURL),
+            onNewTag: beginCreatingTag,
+            onMetadataChanged: refreshMetadata,
+            onTogglePin: togglePin,
+            removeTitle: "从最近打开移除",
+            onRemove: { removeFromRecent(url) }
+        )
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -602,12 +699,8 @@ struct FileSidebar: View {
             let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
             guard !droppedURLs.isEmpty else { return }
             let imported = await Task.detached { LibraryFolders.prepareImport(droppedURLs) }.value
-            let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
             await MainActor.run {
                 LibraryFolders.apply(imported, into: &libraryFolders)
-                FileHistory.bulkAdd(renderableURLs)
-                recentFiles = FileHistory.load()
-                if let first = renderableURLs.first { selectedURL = first }
             }
         }
         return true
@@ -618,11 +711,8 @@ struct FileSidebar: View {
             let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
             guard !droppedURLs.isEmpty else { return }
             let imported = await Task.detached { LibraryFolders.prepareImport(droppedURLs) }.value
-            let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
             await MainActor.run {
                 LibraryFolders.apply(imported, into: folderID, in: &libraryFolders)
-                FileHistory.bulkAdd(renderableURLs)
-                recentFiles = FileHistory.load()
             }
         }
         return true
@@ -653,6 +743,10 @@ private struct LibraryFolderTree: View {
     let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
+    let pinnedURLs: Set<URL>
+    let onNewTag: (URL) -> Void
+    let onMetadataChanged: () -> Void
+    let onTogglePin: (URL) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -666,7 +760,11 @@ private struct LibraryFolderTree: View {
                     onRemoveFolder: onRemoveFolder,
                     onImportIntoFolder: onImportIntoFolder,
                     onCreateChildFolder: onCreateChildFolder,
-                    onRemoveFile: onRemoveFile
+                    onRemoveFile: onRemoveFile,
+                    pinnedURLs: pinnedURLs,
+                    onNewTag: onNewTag,
+                    onMetadataChanged: onMetadataChanged,
+                    onTogglePin: onTogglePin
                 )
             }
         }
@@ -683,6 +781,10 @@ private struct LibraryFolderBranch: View {
     let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
+    let pinnedURLs: Set<URL>
+    let onNewTag: (URL) -> Void
+    let onMetadataChanged: () -> Void
+    let onTogglePin: (URL) -> Void
     @State private var isExpanded = true
     @State private var isHovering = false
 
@@ -696,11 +798,10 @@ private struct LibraryFolderBranch: View {
                 if hasExpandableContent { isExpanded.toggle() }
             } label: {
                 HStack(spacing: depth > 0 ? 3 : 6) {
-                    Image(systemName: isExpanded ? "folder.fill" : "folder")
-                        .font(.system(size: 13, weight: .medium))
-                        .imageScale(.small)
-                        .foregroundColor(.appMuted)
-                        .frame(width: 18, alignment: .trailing)
+                    SidebarIcon(
+                        name: isExpanded ? "folder.fill" : "folder",
+                        color: .appMuted
+                    )
                         .offset(x: depth > 0 ? -3 : 0)
                     Text(folder.name)
                         .font(.system(size: 13))
@@ -732,7 +833,11 @@ private struct LibraryFolderBranch: View {
                         onRemoveFolder: onRemoveFolder,
                         onImportIntoFolder: onImportIntoFolder,
                         onCreateChildFolder: onCreateChildFolder,
-                        onRemoveFile: onRemoveFile
+                        onRemoveFile: onRemoveFile,
+                        pinnedURLs: pinnedURLs,
+                        onNewTag: onNewTag,
+                        onMetadataChanged: onMetadataChanged,
+                        onTogglePin: onTogglePin
                     )
                 }
                 ForEach(folder.files) { file in
@@ -741,7 +846,11 @@ private struct LibraryFolderBranch: View {
                         depth: depth + 1,
                         isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                         onSelect: { onSelectFile(file.sourceURL) },
-                        onRemove: { onRemoveFile(folder.id, file.id) }
+                        onRemove: { onRemoveFile(folder.id, file.id) },
+                        isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
+                        onNewTag: onNewTag,
+                        onMetadataChanged: onMetadataChanged,
+                        onTogglePin: onTogglePin
                     )
                 }
             }
@@ -764,36 +873,52 @@ private struct LibraryFileRow: View {
     let depth: Int
     let isSelected: Bool
     let onSelect: () -> Void
-    let onRemove: () -> Void
+    let onRemove: (() -> Void)?
+    let isPinned: Bool
+    let onNewTag: (URL) -> Void
+    let onMetadataChanged: () -> Void
+    let onTogglePin: (URL) -> Void
     @State private var isHovering = false
 
     var body: some View {
-        Button {
-            if file.isAvailable { onSelect() }
-        } label: {
-            HStack(spacing: depth > 0 ? 3 : 6) {
-                Image(systemName: file.isAvailable ? file.sourceURL.sidebarIconName : "exclamationmark.triangle")
-                    .font(.system(size: 13, weight: .medium))
-                    .imageScale(.small)
-                    .foregroundColor(file.isAvailable ? (isSelected ? .appAccent : .appMuted) : .orange)
-                    .frame(width: 18, alignment: .trailing)
-                    .offset(x: depth > 0 ? -3 : 0)
-                Text(file.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(file.isAvailable ? .appText : .appMuted)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+        HStack(spacing: depth > 0 ? 3 : 6) {
+            Group {
+                if file.isAvailable {
+                    FileTypeIcon(
+                        url: file.sourceURL,
+                        color: isSelected ? .appAccent : .appMuted
+                    )
+                } else {
+                    SidebarIcon(name: "exclamationmark.triangle", color: .orange)
+                }
             }
-            .padding(.vertical, 7)
-            .padding(.leading, 10 + CGFloat(depth) * 22)
-            .padding(.trailing, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
-            )
-            .contentShape(Rectangle())
+                .offset(x: depth > 0 ? -3 : 0)
+            Text(file.name)
+                .font(.system(size: 13))
+                .foregroundColor(file.isAvailable ? .appText : .appMuted)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+
+            Button { onTogglePin(file.sourceURL) } label: {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isPinned ? .appAccent : .appMuted)
+            }
+            .buttonStyle(.plain)
+            .opacity(isPinned || isHovering ? 1 : 0)
+            .scaleEffect(isPinned || isHovering ? 1 : 0.85, anchor: .trailing)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 7)
+        .padding(.leading, 10 + CGFloat(depth) * 22)
+        .padding(.trailing, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if file.isAvailable { onSelect() }
+        }
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) {
                 isHovering = hovering
@@ -801,7 +926,99 @@ private struct LibraryFileRow: View {
         }
         .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
         .contextMenu {
-            Button("从文件夹移除") { onRemove() }
+            FileItemContextMenu(
+                url: file.sourceURL,
+                isPinned: isPinned,
+                onNewTag: onNewTag,
+                onMetadataChanged: onMetadataChanged,
+                onTogglePin: onTogglePin,
+                removeTitle: onRemove == nil ? nil : "从文件夹移除",
+                onRemove: onRemove
+            )
+        }
+    }
+}
+
+private struct PinnedFilesBranch: View {
+    let urls: [URL]
+    let selectedURL: URL?
+    let onSelect: (URL) -> Void
+    let onNewTag: (URL) -> Void
+    let onMetadataChanged: () -> Void
+    let onTogglePin: (URL) -> Void
+    @State private var isExpanded = true
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button { isExpanded.toggle() } label: {
+                HStack(spacing: 6) {
+                    SidebarIcon(name: "pin.fill", color: .appMuted)
+                    Text("置顶")
+                        .font(.system(size: 13))
+                        .foregroundColor(.appText)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 7)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isHovering ? Color.appHoverBg : .clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+
+            if isExpanded {
+                ForEach(urls, id: \.self) { url in
+                    LibraryFileRow(
+                        file: LibraryFile(sourceURL: url),
+                        depth: 1,
+                        isSelected: selectedURL?.standardizedFileURL == url.standardizedFileURL,
+                        onSelect: { onSelect(url) },
+                        onRemove: nil,
+                        isPinned: true,
+                        onNewTag: onNewTag,
+                        onMetadataChanged: onMetadataChanged,
+                        onTogglePin: onTogglePin
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct FileItemContextMenu: View {
+    let url: URL
+    let isPinned: Bool
+    let onNewTag: (URL) -> Void
+    let onMetadataChanged: () -> Void
+    let onTogglePin: (URL) -> Void
+    let removeTitle: String?
+    let onRemove: (() -> Void)?
+
+    var body: some View {
+        if !FileTags.allTags().isEmpty {
+            Menu("打标") {
+                ForEach(FileTags.allTags(), id: \.self) { tag in
+                    let tagged = FileTags.tags(for: url).contains(tag)
+                    Button {
+                        FileTags.toggleTag(tag, for: url)
+                        onMetadataChanged()
+                    } label: {
+                        if tagged { Label(tag, systemImage: "checkmark") } else { Text(tag) }
+                    }
+                }
+            }
+            Divider()
+        }
+        Button("新建标签...") { onNewTag(url) }
+        Divider()
+        Button(isPinned ? "取消置顶" : "置顶") { onTogglePin(url) }
+        if let removeTitle, let onRemove {
+            Divider()
+            Button(removeTitle) { onRemove() }
         }
     }
 }
@@ -812,8 +1029,6 @@ private struct SidebarRow: View {
     let url: URL
     let isSelected: Bool
     let isKeyboardFocused: Bool
-    let isPinned: Bool
-    let onTogglePin: () -> Void
     let onClearKeyboardFocus: () -> Void
     let action: () -> Void
 
@@ -821,11 +1036,10 @@ private struct SidebarRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: url.sidebarIconName)
-                .font(.system(size: 13, weight: .medium))
-                .imageScale(.small)
-                .foregroundColor(isSelected ? .appAccent : .appMuted)
-                .frame(width: 18, alignment: .trailing)
+            FileTypeIcon(
+                url: url,
+                color: isSelected ? .appAccent : .appMuted
+            )
 
             Text(url.lastPathComponent)
                 .font(.system(size: 13))
@@ -834,15 +1048,6 @@ private struct SidebarRow: View {
                 .truncationMode(.middle)
 
             Spacer(minLength: 0)
-
-            Button(action: onTogglePin) {
-                Image(systemName: isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isPinned ? .appAccent : .appMuted)
-            }
-            .buttonStyle(.plain)
-            .opacity(isPinned || isHovering ? 1 : 0)
-            .scaleEffect(isPinned || isHovering ? 1 : 0.85, anchor: .trailing)
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 10)
@@ -888,11 +1093,10 @@ private struct FormatRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .medium))
-                .imageScale(.small)
-                .foregroundColor(isSelected ? .appAccent : .appMuted)
-                .frame(width: 18, alignment: .trailing)
+            SetiFileIcon(
+                name: icon,
+                color: isSelected ? .appAccent : .appMuted
+            )
 
             Text(label)
                 .font(.system(size: 12, weight: isSelected ? .medium : .regular))
@@ -938,11 +1142,10 @@ private struct TagRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "tag")
-                .font(.system(size: 13, weight: .medium))
-                .imageScale(.small)
-                .foregroundColor(isSelected ? .appAccent : .appMuted)
-                .frame(width: 18, alignment: .trailing)
+            SidebarIcon(
+                name: "tag",
+                color: isSelected ? .appAccent : .appMuted
+            )
 
             Text(label)
                 .font(.system(size: 12, weight: isSelected ? .medium : .regular))
