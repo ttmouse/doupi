@@ -285,7 +285,7 @@ struct FileSidebar: View {
                 .onHover { isLibraryHovered = $0 }
             }
         }
-        .background(Color.appSurface.opacity(0.62))
+        .background(Color.appInfoBg)
     }
 
     private var searchAndFilterSection: some View {
