@@ -644,7 +644,7 @@ private struct LibraryFolderBranch: View {
             Button {
                 if hasExpandableContent { isExpanded.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     Image(systemName: showsDisclosure
                         ? (isExpanded ? "chevron.down" : "chevron.right")
                         : (isExpanded ? "folder.fill" : "folder"))
@@ -692,7 +692,7 @@ private struct LibraryFolderBranch: View {
                     )
                 }
             }
-            .padding(.leading, 12)
+            .padding(.leading, 22)
             }
         }
         .contextMenu {
