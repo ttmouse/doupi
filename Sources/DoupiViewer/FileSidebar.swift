@@ -303,6 +303,7 @@ struct FileSidebar: View {
                             ForEach(root.files) { file in
                                 LibraryFileRow(
                                     file: file,
+                                    depth: 0,
                                     isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                                     onSelect: { selectedURL = file.sourceURL },
                                     onRemove: {
@@ -658,6 +659,7 @@ private struct LibraryFolderTree: View {
             ForEach(folders) { folder in
                 LibraryFolderBranch(
                     folder: folder,
+                    depth: 0,
                     selectedURL: selectedURL,
                     onSelectFile: onSelectFile,
                     onRenameFolder: onRenameFolder,
@@ -673,6 +675,7 @@ private struct LibraryFolderTree: View {
 
 private struct LibraryFolderBranch: View {
     let folder: LibraryFolder
+    let depth: Int
     let selectedURL: URL?
     let onSelectFile: (URL) -> Void
     let onRenameFolder: (LibraryFolder) -> Void
@@ -705,7 +708,8 @@ private struct LibraryFolderBranch: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 7)
-                .padding(.horizontal, 10)
+                .padding(.leading, 10 + CGFloat(depth) * 22)
+                .padding(.trailing, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(isHovering ? Color.appHoverBg : .clear)
@@ -720,6 +724,7 @@ private struct LibraryFolderBranch: View {
                 ForEach(folder.folders) { child in
                     LibraryFolderBranch(
                         folder: child,
+                        depth: depth + 1,
                         selectedURL: selectedURL,
                         onSelectFile: onSelectFile,
                         onRenameFolder: onRenameFolder,
@@ -732,13 +737,13 @@ private struct LibraryFolderBranch: View {
                 ForEach(folder.files) { file in
                     LibraryFileRow(
                         file: file,
+                        depth: depth + 1,
                         isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                         onSelect: { onSelectFile(file.sourceURL) },
                         onRemove: { onRemoveFile(folder.id, file.id) }
                     )
                 }
             }
-            .padding(.leading, 22)
             }
         }
         .contextMenu {
@@ -755,6 +760,7 @@ private struct LibraryFolderBranch: View {
 
 private struct LibraryFileRow: View {
     let file: LibraryFile
+    let depth: Int
     let isSelected: Bool
     let onSelect: () -> Void
     let onRemove: () -> Void
@@ -777,7 +783,8 @@ private struct LibraryFileRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 7)
-            .padding(.horizontal, 10)
+            .padding(.leading, 10 + CGFloat(depth) * 22)
+            .padding(.trailing, 10)
             .background(
                 RoundedRectangle(cornerRadius: 5)
                     .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
