@@ -61,6 +61,11 @@ struct FileSidebar: View {
     @State private var newTagName = ""
     @State private var pendingTagURL: URL? = nil
     @State private var pinnedURLs: Set<URL> = []
+    @State private var isFormatFilterExpanded = true
+    @State private var isTagFilterExpanded = true
+    @State private var isFormatHeaderHovered = false
+    @State private var isTagHeaderHovered = false
+    @State private var isLibraryExpanded = true
     @State private var isRecentExpanded = true
     @State private var libraryFolders: [LibraryFolder] = []
     @State private var showFolderNameAlert = false
@@ -83,9 +88,13 @@ struct FileSidebar: View {
         return libraryFolders.compactMap { filterFolder($0, queryMatchedByAncestor: false) }
     }
 
+    private var allLibraryURLs: [URL] {
+        libraryFolders.flatMap(allURLs)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            searchAndFilterBar
+            searchAndFilterSection
                 .id(tagVersion)
             librarySection
                 .frame(maxHeight: .infinity)
@@ -172,12 +181,26 @@ struct FileSidebar: View {
     }
 
     private var librarySection: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Text("文件夹")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.appText)
-                Spacer()
+        VStack(spacing: 3) {
+            HStack(spacing: 5) {
+                Button { isLibraryExpanded.toggle() } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: isLibraryExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.appMuted)
+                        Text("文件夹")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.appText)
+                        Spacer()
+                        Text("\(libraryFolders.count)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.appMuted)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
                 Button {
                     renamingFolderID = nil
                     newFolderParentID = nil
@@ -192,9 +215,9 @@ struct FileSidebar: View {
                 .help("新建 Doupi 文件夹")
             }
             .padding(.horizontal, 12)
-            .padding(.top, 10)
+            .padding(.vertical, 7)
 
-            if libraryFolders.isEmpty {
+            if isLibraryExpanded && libraryFolders.isEmpty {
                 VStack(spacing: 5) {
                     Image(systemName: "folder")
                         .font(.system(size: 20, weight: .light))
@@ -205,7 +228,7 @@ struct FileSidebar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 Spacer()
-            } else if filteredLibraryFolders.isEmpty {
+            } else if isLibraryExpanded && filteredLibraryFolders.isEmpty {
                 VStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .light))
@@ -220,7 +243,7 @@ struct FileSidebar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
                 Spacer()
-            } else {
+            } else if isLibraryExpanded {
                 ScrollView {
                     LibraryFolderTree(
                         folders: filteredLibraryFolders,
@@ -251,99 +274,129 @@ struct FileSidebar: View {
                 }
             }
         }
-        .padding(.bottom, 8)
-        .background(Color.appInfoBg)
+        .background(Color.appSurface.opacity(0.62))
     }
 
-    private var searchAndFilterBar: some View {
-        VStack(spacing: 6) {
+    private var searchAndFilterSection: some View {
+        VStack(spacing: 0) {
             HStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.appMuted)
-                    TextField("搜索所有文件...", text: $filterText)
-                        .font(.system(size: 12))
-                        .textFieldStyle(.plain)
-                        .focused($isFilterFocused)
-                    if !filterText.isEmpty {
-                        Button { filterText = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.appMuted)
-                        }
-                        .buttonStyle(.plain)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.appMuted)
+                TextField("筛选文件...", text: $filterText)
+                    .font(.system(size: 12))
+                    .foregroundColor(.appText)
+                    .textFieldStyle(.plain)
+                    .focused($isFilterFocused)
+                if !filterText.isEmpty {
+                    Button(action: { filterText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.appMuted)
                     }
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
-                .background(Color.appSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                Menu {
-                    Menu("格式") {
-                        Button("全部格式") { selectedFormat = nil }
-                        ForEach(FileFormat.allCases, id: \.self) { format in
-                            Button {
-                                selectedFormat = selectedFormat == format ? nil : format
-                            } label: {
-                                if selectedFormat == format {
-                                    Label(format.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Text(format.rawValue)
-                                }
-                            }
-                        }
-                    }
-                    if !FileTags.allTags().isEmpty {
-                        Menu("标签") {
-                            Button("全部标签") { selectedTag = nil }
-                            ForEach(FileTags.allTags(), id: \.self) { tag in
-                                Button {
-                                    selectedTag = selectedTag == tag ? nil : tag
-                                } label: {
-                                    if selectedTag == tag {
-                                        Label(tag, systemImage: "checkmark")
-                                    } else {
-                                        Text(tag)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if selectedFormat != nil || selectedTag != nil {
-                        Divider()
-                        Button("清除筛选") { clearFilters() }
-                    }
-                } label: {
-                    Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 15))
-                        .foregroundColor(hasActiveFilters ? .appAccent : .appMuted)
-                        .frame(width: 28, height: 28)
-                        .background(hasActiveFilters ? Color.appAccentDimmed : Color.appSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("筛选文件")
-            }
-
-            if selectedFormat != nil || selectedTag != nil {
-                HStack(spacing: 5) {
-                    if let format = selectedFormat {
-                        FilterChip(label: format.rawValue) { selectedFormat = nil }
-                    }
-                    if let tag = selectedTag {
-                        FilterChip(label: tag) { selectedTag = nil }
-                    }
-                    Spacer(minLength: 0)
+                    .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(Color.appBorder, lineWidth: 0.5)
+            )
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Button(action: { isFormatFilterExpanded.toggle() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: isFormatFilterExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.appMuted)
+                            .frame(width: 8)
+                        Text("格式筛选")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.appMuted)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(isFormatHeaderHovered ? Color.appHoverBg : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.plain)
+                .onHover { isFormatHeaderHovered = $0 }
+
+                if isFormatFilterExpanded {
+                    FormatRow(
+                        label: "全部",
+                        icon: "line.horizontal.3.decrease.circle",
+                        count: allLibraryURLs.count,
+                        isSelected: selectedFormat == nil
+                    ) { selectedFormat = nil }
+
+                    ForEach(FileFormat.allCases, id: \.self) { format in
+                        let count = allLibraryURLs.filter { FileFormat.for($0) == format }.count
+                        if count > 0 {
+                            FormatRow(
+                                label: format.rawValue,
+                                icon: format.icon,
+                                count: count,
+                                isSelected: selectedFormat == format
+                            ) { selectedFormat = selectedFormat == format ? nil : format }
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, 4)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Button(action: { isTagFilterExpanded.toggle() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: isTagFilterExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.appMuted)
+                            .frame(width: 8)
+                        Text("标签筛选")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.appMuted)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(isTagHeaderHovered ? Color.appHoverBg : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.plain)
+                .onHover { isTagHeaderHovered = $0 }
+
+                if isTagFilterExpanded {
+                    TagRow(
+                        label: "全部",
+                        count: allLibraryURLs.count,
+                        isSelected: selectedTag == nil,
+                        action: { selectedTag = nil }
+                    )
+
+                    ForEach(FileTags.allTags(), id: \.self) { tag in
+                        let count = allLibraryURLs.filter { FileTags.tags(for: $0).contains(tag) }.count
+                        if count > 0 {
+                            TagRow(
+                                label: tag,
+                                count: count,
+                                isSelected: selectedTag == tag,
+                                action: { selectedTag = selectedTag == tag ? nil : tag }
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, 4)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .background(Color.appSurface.opacity(0.72))
     }
 
     private var recentSection: some View {
@@ -395,6 +448,10 @@ struct FileSidebar: View {
     }
 
     // MARK: - Helpers
+
+    private func allURLs(_ folder: LibraryFolder) -> [URL] {
+        folder.files.map(\.sourceURL) + folder.folders.flatMap(allURLs)
+    }
 
     private func filterFolder(_ folder: LibraryFolder, queryMatchedByAncestor: Bool) -> LibraryFolder? {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -493,28 +550,6 @@ struct FileSidebar: View {
         FileHistory.save(urls)
         recentFiles = urls
         if selectedURL == url { selectedURL = nil }
-    }
-}
-
-private struct FilterChip: View {
-    let label: String
-    let onRemove: () -> Void
-
-    var body: some View {
-        Button(action: onRemove) {
-            HStack(spacing: 4) {
-                Text(label)
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-            }
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(.appAccentDeep)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Color.appAccentDimmed)
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
     }
 }
 
