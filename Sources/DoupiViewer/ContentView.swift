@@ -187,9 +187,17 @@ struct ContentView: View {
     private func openFile() {
         let urls = FileDropDelegate.openPanel()
         guard !urls.isEmpty else { return }
-        FileHistory.bulkAdd(urls)
-        sidebarRefresh += 1
-        loadFile(url: urls[0])
+        Task {
+            let imported = await Task.detached { LibraryFolders.prepareImport(urls) }.value
+            let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
+            var folders = LibraryFolders.load()
+            LibraryFolders.apply(imported, into: &folders)
+            FileHistory.bulkAdd(renderableURLs)
+            sidebarRefresh += 1
+            if let first = renderableURLs.first {
+                loadFile(url: first)
+            }
+        }
     }
 
     private func closeFile() {
@@ -213,12 +221,18 @@ struct ContentView: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         Task {
-            let urls = await FileDropDelegate.collectRenderableFiles(from: providers)
-            guard !urls.isEmpty else { return }
-            FileHistory.bulkAdd(urls)
+            let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
+            guard !droppedURLs.isEmpty else { return }
+            let imported = await Task.detached { LibraryFolders.prepareImport(droppedURLs) }.value
+            let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
             await MainActor.run {
+                var folders = LibraryFolders.load()
+                LibraryFolders.apply(imported, into: &folders)
+                FileHistory.bulkAdd(renderableURLs)
                 sidebarRefresh += 1
-                loadFile(url: urls[0])
+                if let first = renderableURLs.first {
+                    loadFile(url: first)
+                }
             }
         }
         return true

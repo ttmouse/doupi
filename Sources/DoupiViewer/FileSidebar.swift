@@ -67,6 +67,12 @@ struct FileSidebar: View {
     @State private var isTagFilterExpanded = true
     @State private var isFormatHeaderHovered = false
     @State private var isTagHeaderHovered = false
+    @State private var libraryFolders: [LibraryFolder] = []
+    @State private var showFolderNameAlert = false
+    @State private var folderName = ""
+    @State private var renamingFolderID: UUID? = nil
+    @State private var newFolderParentID: UUID? = nil
+    @State private var folderPendingDeletion: LibraryFolder? = nil
 
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
@@ -106,6 +112,8 @@ struct FileSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            librarySection
+
             // Filter input
             if !recentFiles.isEmpty {
                 HStack(spacing: 6) {
@@ -383,10 +391,12 @@ struct FileSidebar: View {
         .onAppear {
             recentFiles = FileHistory.load()
             pinnedURLs = PinnedFiles.load()
+            libraryFolders = LibraryFolders.load()
         }
         .onChange(of: refreshToken) { _, _ in
             recentFiles = FileHistory.load()
             pinnedURLs = PinnedFiles.load()
+            libraryFolders = LibraryFolders.load()
         }
         .onChange(of: filterText) { _, _ in
             keyboardFocusIndex = nil
@@ -412,18 +422,142 @@ struct FileSidebar: View {
         } message: {
             Text("输入新标签名称")
         }
+        .alert(renamingFolderID == nil ? "新建文件夹" : "重命名文件夹", isPresented: $showFolderNameAlert) {
+            TextField("文件夹名称", text: $folderName)
+            Button("取消", role: .cancel) {
+                renamingFolderID = nil
+                newFolderParentID = nil
+            }
+            Button("保存") {
+                let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                if let id = renamingFolderID {
+                    LibraryFolders.rename(id, to: name, in: &libraryFolders)
+                } else {
+                    LibraryFolders.createFolder(named: name, parentID: newFolderParentID, in: &libraryFolders)
+                }
+                renamingFolderID = nil
+                newFolderParentID = nil
+            }
+        } message: {
+            Text("文件夹只存在于 Doupi，不会修改磁盘内容")
+        }
+        .confirmationDialog(
+            "删除“\(folderPendingDeletion?.name ?? "")”？",
+            isPresented: Binding(
+                get: { folderPendingDeletion != nil },
+                set: { if !$0 { folderPendingDeletion = nil } }
+            )
+        ) {
+            Button("删除 Doupi 文件夹", role: .destructive) {
+                if let folder = folderPendingDeletion {
+                    LibraryFolders.remove(folder.id, from: &libraryFolders)
+                }
+                folderPendingDeletion = nil
+            }
+            Button("取消", role: .cancel) { folderPendingDeletion = nil }
+        } message: {
+            Text("只删除 Doupi 中的组织结构，磁盘原文件不会被删除。")
+        }
+    }
+
+    private var librarySection: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("文件夹")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.appText)
+                Spacer()
+                Button {
+                    renamingFolderID = nil
+                    newFolderParentID = nil
+                    folderName = ""
+                    showFolderNameAlert = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.appMuted)
+                }
+                .buttonStyle(.plain)
+                .help("新建 Doupi 文件夹")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+
+            if libraryFolders.isEmpty {
+                VStack(spacing: 5) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 20, weight: .light))
+                    Text("拖入文件夹，或新建一个")
+                        .font(.system(size: 11))
+                }
+                .foregroundColor(.appMuted)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            } else {
+                ScrollView {
+                    LibraryFolderTree(
+                        folders: libraryFolders,
+                        selectedURL: selectedURL,
+                        onSelectFile: { selectedURL = $0 },
+                        onRenameFolder: { folder in
+                            renamingFolderID = folder.id
+                            folderName = folder.name
+                            showFolderNameAlert = true
+                        },
+                        onRemoveFolder: { folder in
+                            folderPendingDeletion = folder
+                        },
+                        onImportIntoFolder: { folderID, providers in
+                            handleDrop(providers, into: folderID)
+                        },
+                        onCreateChildFolder: { folder in
+                            renamingFolderID = nil
+                            newFolderParentID = folder.id
+                            folderName = ""
+                            showFolderNameAlert = true
+                        },
+                        onRemoveFile: { folderID, fileID in
+                            LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
+                        }
+                    )
+                    .padding(.horizontal, 4)
+                }
+                .frame(maxHeight: 280)
+            }
+        }
+        .padding(.bottom, 8)
+        .background(Color.appSurface.opacity(0.55))
     }
 
     // MARK: - Helpers
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         Task {
-            let urls = await FileDropDelegate.collectRenderableFiles(from: providers)
-            guard !urls.isEmpty else { return }
-            FileHistory.bulkAdd(urls)
+            let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
+            guard !droppedURLs.isEmpty else { return }
+            let imported = await Task.detached { LibraryFolders.prepareImport(droppedURLs) }.value
+            let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
             await MainActor.run {
+                LibraryFolders.apply(imported, into: &libraryFolders)
+                FileHistory.bulkAdd(renderableURLs)
                 recentFiles = FileHistory.load()
-                selectedURL = urls[0]
+                if let first = renderableURLs.first { selectedURL = first }
+            }
+        }
+        return true
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider], into folderID: UUID) -> Bool {
+        Task {
+            let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
+            guard !droppedURLs.isEmpty else { return }
+            let imported = await Task.detached { LibraryFolders.prepareImport(droppedURLs) }.value
+            let renderableURLs = imported.allFileURLs.filter { FileInfo.from(url: $0)?.isRenderable == true }
+            await MainActor.run {
+                LibraryFolders.apply(imported, into: folderID, in: &libraryFolders)
+                FileHistory.bulkAdd(renderableURLs)
+                recentFiles = FileHistory.load()
             }
         }
         return true
@@ -440,6 +574,111 @@ struct FileSidebar: View {
         FileHistory.save(urls)
         recentFiles = urls
         if selectedURL == url { selectedURL = nil }
+    }
+}
+
+// MARK: - Library Folder Tree
+
+private struct LibraryFolderTree: View {
+    let folders: [LibraryFolder]
+    let selectedURL: URL?
+    let onSelectFile: (URL) -> Void
+    let onRenameFolder: (LibraryFolder) -> Void
+    let onRemoveFolder: (LibraryFolder) -> Void
+    let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
+    let onCreateChildFolder: (LibraryFolder) -> Void
+    let onRemoveFile: (UUID, UUID) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(folders) { folder in
+                LibraryFolderBranch(
+                    folder: folder,
+                    selectedURL: selectedURL,
+                    onSelectFile: onSelectFile,
+                    onRenameFolder: onRenameFolder,
+                    onRemoveFolder: onRemoveFolder,
+                    onImportIntoFolder: onImportIntoFolder,
+                    onCreateChildFolder: onCreateChildFolder,
+                    onRemoveFile: onRemoveFile
+                )
+            }
+        }
+    }
+}
+
+private struct LibraryFolderBranch: View {
+    let folder: LibraryFolder
+    let selectedURL: URL?
+    let onSelectFile: (URL) -> Void
+    let onRenameFolder: (LibraryFolder) -> Void
+    let onRemoveFolder: (LibraryFolder) -> Void
+    let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
+    let onCreateChildFolder: (LibraryFolder) -> Void
+    let onRemoveFile: (UUID, UUID) -> Void
+    @State private var isExpanded = true
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(folder.folders) { child in
+                    LibraryFolderBranch(
+                        folder: child,
+                        selectedURL: selectedURL,
+                        onSelectFile: onSelectFile,
+                        onRenameFolder: onRenameFolder,
+                        onRemoveFolder: onRemoveFolder,
+                        onImportIntoFolder: onImportIntoFolder,
+                        onCreateChildFolder: onCreateChildFolder,
+                        onRemoveFile: onRemoveFile
+                    )
+                }
+                ForEach(folder.files) { file in
+                    Button {
+                        if file.isAvailable { onSelectFile(file.sourceURL) }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: file.isAvailable ? "doc" : "exclamationmark.triangle")
+                                .font(.system(size: 11))
+                                .foregroundColor(file.isAvailable ? .appMuted : .orange)
+                                .frame(width: 16)
+                            Text(file.name)
+                                .font(.system(size: 12))
+                                .foregroundColor(file.isAvailable ? .appText : .appMuted)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL ? Color.appSelectedBg : .clear)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
+                    .contextMenu {
+                        Button("从文件夹移除") { onRemoveFile(folder.id, file.id) }
+                    }
+                }
+            }
+            .padding(.leading, 12)
+        } label: {
+            Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.appText)
+                .lineLimit(1)
+                .padding(.vertical, 5)
+        }
+        .contextMenu {
+            Button("新建子文件夹") { onCreateChildFolder(folder) }
+            Button("重命名") { onRenameFolder(folder) }
+            Divider()
+            Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers, _ in
+            onImportIntoFolder(folder.id, providers)
+        }
     }
 }
 
