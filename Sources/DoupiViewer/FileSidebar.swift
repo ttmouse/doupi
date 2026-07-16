@@ -103,10 +103,13 @@ struct FileSidebar: View {
             if isLibraryExpanded {
                 librarySection
                     .frame(maxHeight: .infinity)
+                    .padding(.top, isTagFilterExpanded ? 4 : 0)
             } else {
                 librarySection
+                    .padding(.top, isTagFilterExpanded ? 4 : 0)
             }
             recentSection
+                .padding(.top, isLibraryExpanded ? 4 : 0)
             if !isLibraryExpanded {
                 Spacer(minLength: 0)
             }
@@ -413,6 +416,7 @@ struct FileSidebar: View {
                     }
                 }
             }
+            .padding(.top, isFormatFilterExpanded ? 4 : 0)
             .padding(.bottom, 4)
         }
     }
@@ -470,7 +474,7 @@ struct FileSidebar: View {
                         },
                         isHovered: isRecentHovered
                     )
-                    .frame(minHeight: 31, maxHeight: .infinity)
+                    .frame(height: min(CGFloat(recentFiles.count) * 31, 310))
                     .onHover { isRecentHovered = $0 }
                 }
             }
