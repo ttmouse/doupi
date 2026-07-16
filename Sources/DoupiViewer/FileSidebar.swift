@@ -738,7 +738,7 @@ private struct LibraryFolderBranch: View {
                     )
                 }
             }
-            .padding(.leading, 24)
+            .padding(.leading, 22)
             }
         }
         .contextMenu {
