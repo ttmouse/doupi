@@ -110,7 +110,7 @@ struct FileSidebar: View {
             }
             recentSection
                 .padding(.top, isLibraryExpanded ? 4 : 0)
-            if !isLibraryExpanded {
+            if !isLibraryExpanded && !isRecentExpanded {
                 Spacer(minLength: 0)
             }
         }
@@ -474,7 +474,8 @@ struct FileSidebar: View {
                         },
                         isHovered: isRecentHovered
                     )
-                    .frame(height: min(CGFloat(recentFiles.count) * 31, 310))
+                    .frame(height: isLibraryExpanded ? min(CGFloat(recentFiles.count) * 31, 310) : nil)
+                    .frame(maxHeight: isLibraryExpanded ? nil : .infinity)
                     .onHover { isRecentHovered = $0 }
                 }
             }
