@@ -692,9 +692,10 @@ private struct LibraryFolderBranch: View {
             Button {
                 if hasExpandableContent { isExpanded.toggle() }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Image(systemName: isExpanded ? "folder.fill" : "folder")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
+                        .imageScale(.small)
                         .foregroundColor(.appMuted)
                         .frame(width: 18)
                     Text(folder.name)
@@ -737,7 +738,7 @@ private struct LibraryFolderBranch: View {
                     )
                 }
             }
-            .padding(.leading, 22)
+            .padding(.leading, 24)
             }
         }
         .contextMenu {
@@ -763,7 +764,7 @@ private struct LibraryFileRow: View {
         Button {
             if file.isAvailable { onSelect() }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: file.isAvailable ? file.sourceURL.sidebarIconName : "exclamationmark.triangle")
                     .font(.system(size: 13, weight: .medium))
                     .imageScale(.small)
@@ -810,7 +811,7 @@ private struct SidebarRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             Image(systemName: url.sidebarIconName)
                 .font(.system(size: 13, weight: .medium))
                 .imageScale(.small)
@@ -877,9 +878,10 @@ private struct FormatRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
+                .imageScale(.small)
                 .foregroundColor(isSelected ? .appAccent : .appMuted)
                 .frame(width: 18)
 
@@ -926,9 +928,10 @@ private struct TagRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: "tag")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
+                .imageScale(.small)
                 .foregroundColor(isSelected ? .appAccent : .appMuted)
                 .frame(width: 18)
 
