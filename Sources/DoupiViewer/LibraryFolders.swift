@@ -141,6 +141,17 @@ enum LibraryFolders {
         save(folders)
     }
 
+    static func removeFile(at url: URL, in folders: inout [LibraryFolder]) {
+        let standard = url.standardizedFileURL
+        removeFile(at: standard, from: &folders)
+        save(folders)
+    }
+
+    static func replaceFileURL(_ url: URL, with renamedURL: URL, in folders: inout [LibraryFolder]) {
+        replaceFileURLRecursively(url.standardizedFileURL, with: renamedURL.standardizedFileURL, in: &folders)
+        save(folders)
+    }
+
     static func remove(_ id: UUID, from folders: inout [LibraryFolder]) {
         if let index = folders.firstIndex(where: { $0.id == id }) {
             folders.remove(at: index)
@@ -179,6 +190,23 @@ enum LibraryFolders {
             return true
         }
         return false
+    }
+
+    private static func removeFile(at url: URL, from folders: inout [LibraryFolder]) {
+        for index in folders.indices {
+            folders[index].files.removeAll { $0.sourceURL.standardizedFileURL == url }
+            removeFile(at: url, from: &folders[index].folders)
+        }
+    }
+
+    private static func replaceFileURLRecursively(_ url: URL, with renamedURL: URL, in folders: inout [LibraryFolder]) {
+        for index in folders.indices {
+            for fileIndex in folders[index].files.indices where folders[index].files[fileIndex].sourceURL.standardizedFileURL == url {
+                folders[index].files[fileIndex].sourceURL = renamedURL
+                folders[index].files[fileIndex].name = renamedURL.lastPathComponent
+            }
+            replaceFileURLRecursively(url, with: renamedURL, in: &folders[index].folders)
+        }
     }
 
     private static func renameRecursive(_ id: UUID, to name: String, in folders: inout [LibraryFolder]) -> Bool {

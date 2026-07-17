@@ -30,4 +30,18 @@ enum PinnedFiles {
         }
         save(pinned)
     }
+
+
+    static func remove(_ url: URL) {
+        var pinned = load()
+        pinned.remove(url.standardizedFileURL)
+        save(pinned)
+    }
+
+    static func replace(_ url: URL, with renamedURL: URL) {
+        var pinned = load()
+        guard pinned.remove(url.standardizedFileURL) != nil else { return }
+        pinned.insert(renamedURL.standardizedFileURL)
+        save(pinned)
+    }
 }
