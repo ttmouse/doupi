@@ -175,6 +175,7 @@ struct FileSidebar: View {
     @State private var isLibraryExpanded = true
     @State private var isPinnedExpanded = true
     @State private var isRecentExpanded = true
+    @State private var collapsedFolderIDs: Set<UUID> = []
     @State private var libraryFolders: [LibraryFolder] = []
     @State private var showFolderNameAlert = false
     @State private var folderName = ""
@@ -261,6 +262,7 @@ struct FileSidebar: View {
             recentFiles = FileHistory.load()
             pinnedURLs = PinnedFiles.load()
             libraryFolders = LibraryFolders.load()
+            loadExpansionState()
         }
         .onChange(of: refreshToken) { _, _ in
             recentFiles = FileHistory.load()
@@ -273,6 +275,7 @@ struct FileSidebar: View {
                 focusFilter?.wrappedValue = false
             }
         }
+        .onChange(of: expansionState) { _, state in SidebarExpansionStore.save(state) }
         .alert("新建标签", isPresented: $showNewTagAlert) {
             TextField("标签名称", text: $newTagName)
             Button("取消", role: .cancel) { }
@@ -318,6 +321,7 @@ struct FileSidebar: View {
             Button("删除 Doupi 文件夹", role: .destructive) {
                 if let folder = folderPendingDeletion {
                     LibraryFolders.remove(folder.id, from: &libraryFolders)
+                    collapsedFolderIDs.subtract(folderIDs(in: folder))
                 }
                 folderPendingDeletion = nil
             }
@@ -498,6 +502,7 @@ struct FileSidebar: View {
                             onMetadataChanged: refreshMetadata,
                             onTogglePin: togglePin,
                             onRenameFile: beginRenamingFile,
+                            collapsedFolderIDs: $collapsedFolderIDs,
                             renamingFileURL: renamingFileURL,
                             renamingFileRowID: renamingFileRowID,
                             fileRenameName: $fileRenameName,
@@ -735,6 +740,12 @@ struct FileSidebar: View {
         folder.files.map(\.sourceURL) + folder.folders.flatMap(allURLs)
     }
 
+    private func folderIDs(in folder: LibraryFolder) -> Set<UUID> {
+        Set([folder.id]).union(folder.folders.reduce(into: Set<UUID>()) { ids, child in
+            ids.formUnion(folderIDs(in: child))
+        })
+    }
+
     private func isSystemInbox(_ folder: LibraryFolder) -> Bool {
         folder.name == "未分类" && folder.folders.isEmpty
     }
@@ -763,6 +774,27 @@ struct FileSidebar: View {
         filterText = ""
         selectedFormat = nil
         selectedTag = nil
+    }
+
+    private func loadExpansionState() {
+        let state = SidebarExpansionStore.load()
+        isFormatFilterExpanded = state.isFormatFilterExpanded
+        isTagFilterExpanded = state.isTagFilterExpanded
+        isPinnedExpanded = state.isPinnedExpanded
+        isLibraryExpanded = state.isLibraryExpanded
+        isRecentExpanded = state.isRecentExpanded
+        collapsedFolderIDs = state.collapsedFolderIDs
+    }
+
+    private var expansionState: SidebarExpansionState {
+        SidebarExpansionState(
+            isFormatFilterExpanded: isFormatFilterExpanded,
+            isTagFilterExpanded: isTagFilterExpanded,
+            isPinnedExpanded: isPinnedExpanded,
+            isLibraryExpanded: isLibraryExpanded,
+            isRecentExpanded: isRecentExpanded,
+            collapsedFolderIDs: collapsedFolderIDs
+        )
     }
 
     private func beginCreatingTag(for url: URL) {
@@ -941,6 +973,7 @@ private struct LibraryFolderTree: View {
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
     let onRenameFile: (URL, String) -> Void
+    @Binding var collapsedFolderIDs: Set<UUID>
     let renamingFileURL: URL?
     let renamingFileRowID: String?
     @Binding var fileRenameName: String
@@ -966,6 +999,7 @@ private struct LibraryFolderTree: View {
                     onMetadataChanged: onMetadataChanged,
                     onTogglePin: onTogglePin,
                     onRenameFile: onRenameFile,
+                    collapsedFolderIDs: $collapsedFolderIDs,
                     renamingFileURL: renamingFileURL,
                     renamingFileRowID: renamingFileRowID,
                     fileRenameName: $fileRenameName,
@@ -993,23 +1027,32 @@ private struct LibraryFolderBranch: View {
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
     let onRenameFile: (URL, String) -> Void
+    @Binding var collapsedFolderIDs: Set<UUID>
     let renamingFileURL: URL?
     let renamingFileRowID: String?
     @Binding var fileRenameName: String
     let onRenameCommit: (URL) -> Void
     let onRenameCancel: () -> Void
     let onRequestDelete: (URL) -> Void
-    @State private var isExpanded = true
     @State private var isHovering = false
 
     private var hasExpandableContent: Bool {
         !folder.folders.isEmpty || !folder.files.isEmpty
     }
 
+    private var isExpanded: Bool {
+        !collapsedFolderIDs.contains(folder.id)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
-                if hasExpandableContent { isExpanded.toggle() }
+                guard hasExpandableContent else { return }
+                if isExpanded {
+                    collapsedFolderIDs.insert(folder.id)
+                } else {
+                    collapsedFolderIDs.remove(folder.id)
+                }
             } label: {
                 HStack(spacing: depth > 0 ? 3 : 6) {
                     SidebarIcon(
@@ -1053,6 +1096,7 @@ private struct LibraryFolderBranch: View {
                         onMetadataChanged: onMetadataChanged,
                         onTogglePin: onTogglePin,
                         onRenameFile: onRenameFile,
+                        collapsedFolderIDs: $collapsedFolderIDs,
                         renamingFileURL: renamingFileURL,
                         renamingFileRowID: renamingFileRowID,
                         fileRenameName: $fileRenameName,
