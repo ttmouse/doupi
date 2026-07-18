@@ -208,6 +208,7 @@ struct FileSidebar: View {
     @State private var isFormatHeaderHovered = false
     @State private var isTagHeaderHovered = false
     @State private var isLibraryHeaderHovered = false
+    @State private var isLibraryRootDropTarget = false
     @State private var isPinnedHeaderHovered = false
     @State private var isRecentHeaderHovered = false
     @State private var isLibraryHovered = false
@@ -480,10 +481,13 @@ struct FileSidebar: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(Color.clear)
+            .background(isLibraryRootDropTarget ? Color.appAccent.opacity(0.16) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .padding(.horizontal, 4)
             .onHover { isLibraryHeaderHovered = $0 }
+            .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isLibraryRootDropTarget) { providers, _ in
+                handleDropIntoRoot(providers)
+            }
 
             if isLibraryExpanded && libraryFolders.isEmpty {
                 VStack(spacing: 5) {
@@ -551,9 +555,6 @@ struct FileSidebar: View {
                             onRenameCancel: cancelRenamingFile,
                             onRequestDelete: requestSourceDeletion
                         )
-                        LibraryRootDropTarget { providers in
-                            handleDropIntoRoot(providers)
-                        }
                         if let root = filteredRootFiles {
                             ForEach(root.files) { file in
                                 LibraryFileRow(
@@ -1073,32 +1074,6 @@ struct FileSidebar: View {
 }
 
 // MARK: - Library Folder Tree
-
-private struct LibraryRootDropTarget: View {
-    let onDrop: ([NSItemProvider]) -> Bool
-    @State private var isTargeted = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            SidebarIcon(name: "tray", color: .appMuted)
-            Text("根目录")
-                .font(.system(size: 12, weight: .medium))
-            Spacer(minLength: 0)
-            Text("拖到这里移出文件夹")
-                .font(.system(size: 10))
-                .foregroundColor(.appMuted)
-        }
-        .foregroundColor(.appText)
-        .padding(.vertical, 7)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isTargeted ? Color.appAccent.opacity(0.2) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isTargeted, perform: onDrop)
-    }
-}
 
 private struct LibraryFolderTree: View {
     let folders: [LibraryFolder]
