@@ -1,6 +1,26 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private let libraryFileDragType = UTType(exportedAs: "com.doupi.viewer.library-file")
+
+private struct LibraryFileDragPayload: Codable {
+    let fileID: UUID
+    let sourceFolderID: UUID
+
+    func itemProvider() -> NSItemProvider {
+        let provider = NSItemProvider()
+        let data = try? JSONEncoder().encode(self)
+        provider.registerDataRepresentation(
+            forTypeIdentifier: libraryFileDragType.identifier,
+            visibility: .all
+        ) { completion in
+            completion(data, nil)
+            return nil
+        }
+        return provider
+    }
+}
+
 // MARK: - File Format Enum
 
 /// Document format categories for the sidebar filter.
@@ -374,6 +394,7 @@ struct FileSidebar: View {
                         LibraryFileRow(
                             file: LibraryFile(sourceURL: url),
                             depth: 0,
+                            sourceFolderID: nil,
                             renameRowID: "pinned:\(url.standardizedFileURL.path)",
                             isSelected: selectedURL?.standardizedFileURL == url.standardizedFileURL,
                             onSelect: { selectedURL = url },
@@ -497,6 +518,7 @@ struct FileSidebar: View {
                             onRemoveFile: { folderID, fileID in
                                 LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
                             },
+                            onMoveFile: moveLibraryFile,
                             pinnedURLs: pinnedURLs,
                             onNewTag: beginCreatingTag,
                             onMetadataChanged: refreshMetadata,
@@ -515,6 +537,7 @@ struct FileSidebar: View {
                                 LibraryFileRow(
                                     file: file,
                                     depth: 0,
+                                    sourceFolderID: root.folderID,
                                     renameRowID: "library:\(file.id.uuidString)",
                                     isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                                     onSelect: { selectedURL = file.sourceURL },
@@ -932,6 +955,18 @@ struct FileSidebar: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider], into folderID: UUID) -> Bool {
+        if let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(libraryFileDragType.identifier)
+        }) {
+            provider.loadDataRepresentation(forTypeIdentifier: libraryFileDragType.identifier) { data, _ in
+                guard let data, let payload = try? JSONDecoder().decode(LibraryFileDragPayload.self, from: data) else { return }
+                DispatchQueue.main.async {
+                    moveLibraryFile(payload, into: folderID)
+                }
+            }
+            return true
+        }
+
         Task {
             let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
             guard !droppedURLs.isEmpty else { return }
@@ -941,6 +976,15 @@ struct FileSidebar: View {
             }
         }
         return true
+    }
+
+    private func moveLibraryFile(_ payload: LibraryFileDragPayload, into folderID: UUID) {
+        LibraryFolders.moveFile(
+            payload.fileID,
+            from: payload.sourceFolderID,
+            to: folderID,
+            in: &libraryFolders
+        )
     }
 
     private func togglePin(_ url: URL) {
@@ -968,6 +1012,7 @@ private struct LibraryFolderTree: View {
     let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
+    let onMoveFile: (LibraryFileDragPayload, UUID) -> Void
     let pinnedURLs: Set<URL>
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
@@ -994,6 +1039,7 @@ private struct LibraryFolderTree: View {
                     onImportIntoFolder: onImportIntoFolder,
                     onCreateChildFolder: onCreateChildFolder,
                     onRemoveFile: onRemoveFile,
+                    onMoveFile: onMoveFile,
                     pinnedURLs: pinnedURLs,
                     onNewTag: onNewTag,
                     onMetadataChanged: onMetadataChanged,
@@ -1022,6 +1068,7 @@ private struct LibraryFolderBranch: View {
     let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
+    let onMoveFile: (LibraryFileDragPayload, UUID) -> Void
     let pinnedURLs: Set<URL>
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
@@ -1091,6 +1138,7 @@ private struct LibraryFolderBranch: View {
                         onImportIntoFolder: onImportIntoFolder,
                         onCreateChildFolder: onCreateChildFolder,
                         onRemoveFile: onRemoveFile,
+                        onMoveFile: onMoveFile,
                         pinnedURLs: pinnedURLs,
                         onNewTag: onNewTag,
                         onMetadataChanged: onMetadataChanged,
@@ -1109,6 +1157,7 @@ private struct LibraryFolderBranch: View {
                     LibraryFileRow(
                         file: file,
                         depth: depth + 1,
+                        sourceFolderID: folder.id,
                         renameRowID: "library:\(file.id.uuidString)",
                         isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                         onSelect: { onSelectFile(file.sourceURL) },
@@ -1135,7 +1184,7 @@ private struct LibraryFolderBranch: View {
             Divider()
             Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers, _ in
+        .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: nil) { providers, _ in
             onImportIntoFolder(folder.id, providers)
         }
     }
@@ -1144,6 +1193,7 @@ private struct LibraryFolderBranch: View {
 private struct LibraryFileRow: View {
     let file: LibraryFile
     let depth: Int
+    let sourceFolderID: UUID?
     let renameRowID: String
     let isSelected: Bool
     let onSelect: () -> Void
@@ -1238,6 +1288,10 @@ private struct LibraryFileRow: View {
                 removeTitle: onRemove == nil ? nil : "从列表移除",
                 onRemove: onRemove
             )
+        }
+        .onDrag {
+            guard let sourceFolderID else { return NSItemProvider() }
+            return LibraryFileDragPayload(fileID: file.id, sourceFolderID: sourceFolderID).itemProvider()
         }
     }
 }

@@ -141,6 +141,25 @@ enum LibraryFolders {
         save(folders)
     }
 
+    static func moveFile(_ fileID: UUID, from sourceFolderID: UUID, to targetFolderID: UUID, in folders: inout [LibraryFolder]) {
+        guard sourceFolderID != targetFolderID,
+              let file = takeFile(fileID, from: sourceFolderID, in: &folders)
+        else { return }
+
+        var didMove = false
+        _ = mutate(targetFolderID, in: &folders) { target in
+            guard !target.files.contains(where: { $0.id == file.id }) else { return }
+            target.files.append(file)
+            didMove = true
+        }
+
+        guard didMove else {
+            _ = mutate(sourceFolderID, in: &folders) { $0.files.append(file) }
+            return
+        }
+        save(folders)
+    }
+
     static func removeFile(at url: URL, in folders: inout [LibraryFolder]) {
         let standard = url.standardizedFileURL
         removeFile(at: standard, from: &folders)
@@ -197,6 +216,15 @@ enum LibraryFolders {
             folders[index].files.removeAll { $0.sourceURL.standardizedFileURL == url }
             removeFile(at: url, from: &folders[index].folders)
         }
+    }
+
+    private static func takeFile(_ fileID: UUID, from folderID: UUID, in folders: inout [LibraryFolder]) -> LibraryFile? {
+        var file: LibraryFile?
+        _ = mutate(folderID, in: &folders) { folder in
+            guard let index = folder.files.firstIndex(where: { $0.id == fileID }) else { return }
+            file = folder.files.remove(at: index)
+        }
+        return file
     }
 
     private static func replaceFileURLRecursively(_ url: URL, with renamedURL: URL, in folders: inout [LibraryFolder]) {
