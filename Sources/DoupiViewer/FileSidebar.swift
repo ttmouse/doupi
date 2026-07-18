@@ -1,23 +1,31 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreTransferable
 
-private let libraryFileDragType = UTType(exportedAs: "com.doupi.viewer.library-file")
+private let libraryFileDragType = UTType(
+    exportedAs: "com.doupi.viewer.library-file",
+    conformingTo: .data
+)
 
-private struct LibraryFileDragPayload: Codable {
+private struct LibraryFileDragPayload: Codable, Transferable {
     let fileID: UUID
     let sourceFolderID: UUID
 
-    func itemProvider() -> NSItemProvider {
-        let provider = NSItemProvider()
-        let data = try? JSONEncoder().encode(self)
-        provider.registerDataRepresentation(
-            forTypeIdentifier: libraryFileDragType.identifier,
-            visibility: .all
-        ) { completion in
-            completion(data, nil)
-            return nil
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: libraryFileDragType)
+    }
+}
+
+private struct LibraryFileDragModifier: ViewModifier {
+    let payload: LibraryFileDragPayload?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let payload {
+            content.draggable(payload)
+        } else {
+            content
         }
-        return provider
     }
 }
 
@@ -955,18 +963,6 @@ struct FileSidebar: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider], into folderID: UUID) -> Bool {
-        if let provider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(libraryFileDragType.identifier)
-        }) {
-            provider.loadDataRepresentation(forTypeIdentifier: libraryFileDragType.identifier) { data, _ in
-                guard let data, let payload = try? JSONDecoder().decode(LibraryFileDragPayload.self, from: data) else { return }
-                DispatchQueue.main.async {
-                    moveLibraryFile(payload, into: folderID)
-                }
-            }
-            return true
-        }
-
         Task {
             let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
             guard !droppedURLs.isEmpty else { return }
@@ -1184,7 +1180,12 @@ private struct LibraryFolderBranch: View {
             Divider()
             Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
         }
-        .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: nil) { providers, _ in
+        .dropDestination(for: LibraryFileDragPayload.self) { payloads, _ in
+            guard let payload = payloads.first else { return false }
+            onMoveFile(payload, folder.id)
+            return true
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers, _ in
             onImportIntoFolder(folder.id, providers)
         }
     }
@@ -1289,10 +1290,11 @@ private struct LibraryFileRow: View {
                 onRemove: onRemove
             )
         }
-        .onDrag {
-            guard let sourceFolderID else { return NSItemProvider() }
-            return LibraryFileDragPayload(fileID: file.id, sourceFolderID: sourceFolderID).itemProvider()
-        }
+        .modifier(
+            LibraryFileDragModifier(
+                payload: sourceFolderID.map { LibraryFileDragPayload(fileID: file.id, sourceFolderID: $0) }
+            )
+        )
     }
 }
 
