@@ -1117,6 +1117,7 @@ private struct LibraryFolderBranch: View {
     let onRenameCancel: () -> Void
     let onRequestDelete: (URL) -> Void
     @State private var isHovering = false
+    @State private var isDropTargeted = false
 
     private var hasExpandableContent: Bool {
         !folder.folders.isEmpty || !folder.files.isEmpty
@@ -1128,43 +1129,56 @@ private struct LibraryFolderBranch: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Button {
-                guard hasExpandableContent else { return }
-                if isExpanded {
-                    collapsedFolderIDs.insert(folder.id)
-                } else {
-                    collapsedFolderIDs.remove(folder.id)
+            HStack(spacing: 0) {
+                Button {
+                    guard hasExpandableContent else { return }
+                    if isExpanded {
+                        collapsedFolderIDs.insert(folder.id)
+                    } else {
+                        collapsedFolderIDs.remove(folder.id)
+                    }
+                } label: {
+                    HStack(spacing: depth > 0 ? 3 : 6) {
+                        SidebarIcon(
+                            name: isExpanded ? "folder.fill" : "folder",
+                            color: .appMuted
+                        )
+                            .offset(x: depth > 0 ? -3 : 0)
+                        Text(folder.name)
+                            .font(.system(size: 13))
+                            .foregroundColor(.appText)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 7)
+                    .padding(.leading, 10 + CGFloat(depth) * 22)
                 }
-            } label: {
-                HStack(spacing: depth > 0 ? 3 : 6) {
-                    SidebarIcon(
-                        name: isExpanded ? "folder.fill" : "folder",
-                        color: .appMuted
-                    )
-                        .offset(x: depth > 0 ? -3 : 0)
-                    Text(folder.name)
-                        .font(.system(size: 13))
-                        .foregroundColor(.appText)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
+                .buttonStyle(.plain)
+
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.appMuted)
+                    .frame(width: 26, height: 28)
+                    .contentShape(Rectangle())
+                    .help("拖拽移动文件夹")
+                    .onDrag {
+                        LibraryFolderDragPayload(
+                            folderID: folder.id,
+                            sourceParentID: parentFolderID
+                        ).itemProvider()
+                    }
+                    .opacity(isHovering ? 1 : 0.45)
                 }
-                .padding(.vertical, 7)
-                .padding(.leading, 10 + CGFloat(depth) * 22)
                 .padding(.trailing, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(isHovering ? Color.appHoverBg : .clear)
+                        .fill(isDropTargeted ? Color.appAccent.opacity(0.2) : (isHovering ? Color.appHoverBg : .clear))
                 )
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { isHovering = $0 }
-            .onDrag {
-                LibraryFolderDragPayload(
-                    folderID: folder.id,
-                    sourceParentID: parentFolderID
-                ).itemProvider()
-            }
+                .onHover { isHovering = $0 }
+                .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isDropTargeted) { providers, _ in
+                    onImportIntoFolder(folder.id, providers)
+                }
 
             if isExpanded {
             VStack(alignment: .leading, spacing: 2) {
@@ -1224,9 +1238,6 @@ private struct LibraryFolderBranch: View {
             Button("重命名") { onRenameFolder(folder) }
             Divider()
             Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
-        }
-        .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: nil) { providers, _ in
-            onImportIntoFolder(folder.id, providers)
         }
     }
 }
