@@ -130,8 +130,11 @@ private struct ZoomableImageCanvas: NSViewRepresentable {
         }
 
         func updateZoom(_ scale: CGFloat) {
-            guard abs(zoomScale.wrappedValue - scale) > 0.001 else { return }
-            zoomScale.wrappedValue = scale
+            let zoomScale = zoomScale
+            DispatchQueue.main.async {
+                guard abs(zoomScale.wrappedValue - scale) > 0.001 else { return }
+                zoomScale.wrappedValue = scale
+            }
         }
     }
 }
@@ -154,6 +157,7 @@ private final class ZoomableImageCanvasView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        clipsToBounds = true
         layer?.backgroundColor = NSColor(Color.appBackground).cgColor
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
