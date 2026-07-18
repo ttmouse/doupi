@@ -551,6 +551,9 @@ struct FileSidebar: View {
                             onRenameCancel: cancelRenamingFile,
                             onRequestDelete: requestSourceDeletion
                         )
+                        LibraryRootDropTarget { providers in
+                            handleDropIntoRoot(providers)
+                        }
                         if let root = filteredRootFiles {
                             ForEach(root.files) { file in
                                 LibraryFileRow(
@@ -1023,6 +1026,38 @@ struct FileSidebar: View {
         )
     }
 
+    private func handleDropIntoRoot(_ providers: [NSItemProvider]) -> Bool {
+        let includesExternalFile = providers.contains {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+
+        if !includesExternalFile, let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(libraryFileDragType.identifier)
+        }) {
+            provider.loadObject(ofClass: NSString.self) { item, _ in
+                guard let string = item as? String else { return }
+                DispatchQueue.main.async {
+                    if let payload = LibraryFileDragPayload.from(string) {
+                        LibraryFolders.moveFileToInbox(
+                            payload.fileID,
+                            from: payload.sourceFolderID,
+                            in: &libraryFolders
+                        )
+                    } else if let payload = LibraryFolderDragPayload.from(string) {
+                        LibraryFolders.moveFolderToRoot(
+                            payload.folderID,
+                            from: payload.sourceParentID,
+                            in: &libraryFolders
+                        )
+                    }
+                }
+            }
+            return true
+        }
+
+        return handleDrop(providers)
+    }
+
     private func togglePin(_ url: URL) {
         PinnedFiles.toggle(url)
         pinnedURLs = PinnedFiles.load()
@@ -1038,6 +1073,32 @@ struct FileSidebar: View {
 }
 
 // MARK: - Library Folder Tree
+
+private struct LibraryRootDropTarget: View {
+    let onDrop: ([NSItemProvider]) -> Bool
+    @State private var isTargeted = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            SidebarIcon(name: "tray", color: .appMuted)
+            Text("根目录")
+                .font(.system(size: 12, weight: .medium))
+            Spacer(minLength: 0)
+            Text("拖到这里移出文件夹")
+                .font(.system(size: 10))
+                .foregroundColor(.appMuted)
+        }
+        .foregroundColor(.appText)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isTargeted ? Color.appAccent.opacity(0.2) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isTargeted, perform: onDrop)
+    }
+}
 
 private struct LibraryFolderTree: View {
     let folders: [LibraryFolder]

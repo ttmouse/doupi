@@ -148,7 +148,9 @@ enum LibraryFolders {
 
         var didMove = false
         _ = mutate(targetFolderID, in: &folders) { target in
-            guard !target.files.contains(where: { $0.id == file.id }) else { return }
+            guard !target.files.contains(where: {
+                $0.id == file.id || $0.sourceURL.standardizedFileURL == file.sourceURL.standardizedFileURL
+            }) else { return }
             target.files.append(file)
             didMove = true
         }
@@ -182,6 +184,19 @@ enum LibraryFolders {
             restoreFolder(folder, to: sourceParentID, in: &folders)
             return
         }
+        save(folders)
+    }
+
+    static func moveFileToInbox(_ fileID: UUID, from sourceFolderID: UUID, in folders: inout [LibraryFolder]) {
+        let inboxID = ensureInbox(in: &folders)
+        moveFile(fileID, from: sourceFolderID, to: inboxID, in: &folders)
+    }
+
+    static func moveFolderToRoot(_ folderID: UUID, from sourceParentID: UUID?, in folders: inout [LibraryFolder]) {
+        guard sourceParentID != nil,
+              let folder = takeFolder(folderID, from: sourceParentID, in: &folders)
+        else { return }
+        folders.append(folder)
         save(folders)
     }
 
@@ -268,6 +283,15 @@ enum LibraryFolders {
 
         guard let index = folders.firstIndex(where: { $0.id == folderID }) else { return nil }
         return folders.remove(at: index)
+    }
+
+    private static func ensureInbox(in folders: inout [LibraryFolder]) -> UUID {
+        if let inbox = folders.first(where: { $0.name == "未分类" && $0.folders.isEmpty }) {
+            return inbox.id
+        }
+        let inbox = LibraryFolder(name: "未分类")
+        folders.append(inbox)
+        return inbox.id
     }
 
     private static func restoreFolder(_ folder: LibraryFolder, to parentID: UUID?, in folders: inout [LibraryFolder]) {
