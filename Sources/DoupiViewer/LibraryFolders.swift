@@ -160,6 +160,31 @@ enum LibraryFolders {
         save(folders)
     }
 
+    static func moveFolder(
+        _ folderID: UUID,
+        from sourceParentID: UUID?,
+        to targetFolderID: UUID,
+        in folders: inout [LibraryFolder]
+    ) {
+        guard folderID != targetFolderID,
+              !contains(targetFolderID, within: folderID, in: folders),
+              let folder = takeFolder(folderID, from: sourceParentID, in: &folders)
+        else { return }
+
+        var didMove = false
+        _ = mutate(targetFolderID, in: &folders) { target in
+            guard !target.folders.contains(where: { $0.id == folder.id }) else { return }
+            target.folders.append(folder)
+            didMove = true
+        }
+
+        guard didMove else {
+            restoreFolder(folder, to: sourceParentID, in: &folders)
+            return
+        }
+        save(folders)
+    }
+
     static func removeFile(at url: URL, in folders: inout [LibraryFolder]) {
         let standard = url.standardizedFileURL
         removeFile(at: standard, from: &folders)
@@ -225,6 +250,47 @@ enum LibraryFolders {
             file = folder.files.remove(at: index)
         }
         return file
+    }
+
+    private static func takeFolder(
+        _ folderID: UUID,
+        from parentID: UUID?,
+        in folders: inout [LibraryFolder]
+    ) -> LibraryFolder? {
+        if let parentID {
+            var folder: LibraryFolder?
+            _ = mutate(parentID, in: &folders) { parent in
+                guard let index = parent.folders.firstIndex(where: { $0.id == folderID }) else { return }
+                folder = parent.folders.remove(at: index)
+            }
+            return folder
+        }
+
+        guard let index = folders.firstIndex(where: { $0.id == folderID }) else { return nil }
+        return folders.remove(at: index)
+    }
+
+    private static func restoreFolder(_ folder: LibraryFolder, to parentID: UUID?, in folders: inout [LibraryFolder]) {
+        if let parentID {
+            _ = mutate(parentID, in: &folders) { $0.folders.append(folder) }
+        } else {
+            folders.append(folder)
+        }
+    }
+
+    private static func contains(_ candidateID: UUID, within folderID: UUID, in folders: [LibraryFolder]) -> Bool {
+        guard let folder = findFolder(folderID, in: folders) else { return false }
+        return folder.folders.contains { child in
+            child.id == candidateID || contains(candidateID, within: child.id, in: [child])
+        }
+    }
+
+    private static func findFolder(_ id: UUID, in folders: [LibraryFolder]) -> LibraryFolder? {
+        for folder in folders {
+            if folder.id == id { return folder }
+            if let child = findFolder(id, in: folder.folders) { return child }
+        }
+        return nil
     }
 
     private static func replaceFileURLRecursively(_ url: URL, with renamedURL: URL, in folders: inout [LibraryFolder]) {

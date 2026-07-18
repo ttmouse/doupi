@@ -1,31 +1,43 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import CoreTransferable
 
-private let libraryFileDragType = UTType(
-    exportedAs: "com.doupi.viewer.library-file",
-    conformingTo: .data
-)
+private let libraryFileDragType = UTType.utf8PlainText
+private let libraryFileDragPrefix = "doupi-library-file:"
+private let libraryFolderDragPrefix = "doupi-library-folder:"
 
-private struct LibraryFileDragPayload: Codable, Transferable {
+private struct LibraryFileDragPayload: Codable {
     let fileID: UUID
     let sourceFolderID: UUID
 
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: libraryFileDragType)
+    func itemProvider() -> NSItemProvider {
+        let data = try? JSONEncoder().encode(self)
+        let encoded = data?.base64EncodedString() ?? ""
+        return NSItemProvider(object: (libraryFileDragPrefix + encoded) as NSString)
+    }
+
+    static func from(_ string: String) -> LibraryFileDragPayload? {
+        guard string.hasPrefix(libraryFileDragPrefix),
+              let data = Data(base64Encoded: String(string.dropFirst(libraryFileDragPrefix.count)))
+        else { return nil }
+        return try? JSONDecoder().decode(LibraryFileDragPayload.self, from: data)
     }
 }
 
-private struct LibraryFileDragModifier: ViewModifier {
-    let payload: LibraryFileDragPayload?
+private struct LibraryFolderDragPayload: Codable {
+    let folderID: UUID
+    let sourceParentID: UUID?
 
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let payload {
-            content.draggable(payload)
-        } else {
-            content
-        }
+    func itemProvider() -> NSItemProvider {
+        let data = try? JSONEncoder().encode(self)
+        let encoded = data?.base64EncodedString() ?? ""
+        return NSItemProvider(object: (libraryFolderDragPrefix + encoded) as NSString)
+    }
+
+    static func from(_ string: String) -> LibraryFolderDragPayload? {
+        guard string.hasPrefix(libraryFolderDragPrefix),
+              let data = Data(base64Encoded: String(string.dropFirst(libraryFolderDragPrefix.count)))
+        else { return nil }
+        return try? JSONDecoder().decode(LibraryFolderDragPayload.self, from: data)
     }
 }
 
@@ -526,7 +538,6 @@ struct FileSidebar: View {
                             onRemoveFile: { folderID, fileID in
                                 LibraryFolders.removeFile(fileID, from: folderID, in: &libraryFolders)
                             },
-                            onMoveFile: moveLibraryFile,
                             pinnedURLs: pinnedURLs,
                             onNewTag: beginCreatingTag,
                             onMetadataChanged: refreshMetadata,
@@ -963,6 +974,26 @@ struct FileSidebar: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider], into folderID: UUID) -> Bool {
+        let includesExternalFile = providers.contains {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+
+        if !includesExternalFile, let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(libraryFileDragType.identifier)
+        }) {
+            provider.loadObject(ofClass: NSString.self) { item, _ in
+                guard let string = item as? String else { return }
+                DispatchQueue.main.async {
+                    if let payload = LibraryFileDragPayload.from(string) {
+                        moveLibraryFile(payload, into: folderID)
+                    } else if let payload = LibraryFolderDragPayload.from(string) {
+                        moveLibraryFolder(payload, into: folderID)
+                    }
+                }
+            }
+            return true
+        }
+
         Task {
             let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
             guard !droppedURLs.isEmpty else { return }
@@ -978,6 +1009,15 @@ struct FileSidebar: View {
         LibraryFolders.moveFile(
             payload.fileID,
             from: payload.sourceFolderID,
+            to: folderID,
+            in: &libraryFolders
+        )
+    }
+
+    private func moveLibraryFolder(_ payload: LibraryFolderDragPayload, into folderID: UUID) {
+        LibraryFolders.moveFolder(
+            payload.folderID,
+            from: payload.sourceParentID,
             to: folderID,
             in: &libraryFolders
         )
@@ -1008,7 +1048,6 @@ private struct LibraryFolderTree: View {
     let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
-    let onMoveFile: (LibraryFileDragPayload, UUID) -> Void
     let pinnedURLs: Set<URL>
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
@@ -1027,6 +1066,7 @@ private struct LibraryFolderTree: View {
             ForEach(folders) { folder in
                 LibraryFolderBranch(
                     folder: folder,
+                    parentFolderID: nil,
                     depth: 0,
                     selectedURL: selectedURL,
                     onSelectFile: onSelectFile,
@@ -1035,7 +1075,6 @@ private struct LibraryFolderTree: View {
                     onImportIntoFolder: onImportIntoFolder,
                     onCreateChildFolder: onCreateChildFolder,
                     onRemoveFile: onRemoveFile,
-                    onMoveFile: onMoveFile,
                     pinnedURLs: pinnedURLs,
                     onNewTag: onNewTag,
                     onMetadataChanged: onMetadataChanged,
@@ -1056,6 +1095,7 @@ private struct LibraryFolderTree: View {
 
 private struct LibraryFolderBranch: View {
     let folder: LibraryFolder
+    let parentFolderID: UUID?
     let depth: Int
     let selectedURL: URL?
     let onSelectFile: (URL) -> Void
@@ -1064,7 +1104,6 @@ private struct LibraryFolderBranch: View {
     let onImportIntoFolder: (UUID, [NSItemProvider]) -> Bool
     let onCreateChildFolder: (LibraryFolder) -> Void
     let onRemoveFile: (UUID, UUID) -> Void
-    let onMoveFile: (LibraryFileDragPayload, UUID) -> Void
     let pinnedURLs: Set<URL>
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
@@ -1120,12 +1159,19 @@ private struct LibraryFolderBranch: View {
             }
             .buttonStyle(.plain)
             .onHover { isHovering = $0 }
+            .onDrag {
+                LibraryFolderDragPayload(
+                    folderID: folder.id,
+                    sourceParentID: parentFolderID
+                ).itemProvider()
+            }
 
             if isExpanded {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(folder.folders) { child in
                     LibraryFolderBranch(
                         folder: child,
+                        parentFolderID: folder.id,
                         depth: depth + 1,
                         selectedURL: selectedURL,
                         onSelectFile: onSelectFile,
@@ -1134,7 +1180,6 @@ private struct LibraryFolderBranch: View {
                         onImportIntoFolder: onImportIntoFolder,
                         onCreateChildFolder: onCreateChildFolder,
                         onRemoveFile: onRemoveFile,
-                        onMoveFile: onMoveFile,
                         pinnedURLs: pinnedURLs,
                         onNewTag: onNewTag,
                         onMetadataChanged: onMetadataChanged,
@@ -1180,12 +1225,7 @@ private struct LibraryFolderBranch: View {
             Divider()
             Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
         }
-        .dropDestination(for: LibraryFileDragPayload.self) { payloads, _ in
-            guard let payload = payloads.first else { return false }
-            onMoveFile(payload, folder.id)
-            return true
-        }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers, _ in
+        .onDrop(of: [.utf8PlainText, .fileURL], isTargeted: nil) { providers, _ in
             onImportIntoFolder(folder.id, providers)
         }
     }
@@ -1290,11 +1330,10 @@ private struct LibraryFileRow: View {
                 onRemove: onRemove
             )
         }
-        .modifier(
-            LibraryFileDragModifier(
-                payload: sourceFolderID.map { LibraryFileDragPayload(fileID: file.id, sourceFolderID: $0) }
-            )
-        )
+        .onDrag {
+            guard let sourceFolderID else { return NSItemProvider() }
+            return LibraryFileDragPayload(fileID: file.id, sourceFolderID: sourceFolderID).itemProvider()
+        }
     }
 }
 
