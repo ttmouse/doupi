@@ -1129,56 +1129,45 @@ private struct LibraryFolderBranch: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 0) {
-                Button {
-                    guard hasExpandableContent else { return }
-                    if isExpanded {
-                        collapsedFolderIDs.insert(folder.id)
-                    } else {
-                        collapsedFolderIDs.remove(folder.id)
-                    }
-                } label: {
-                    HStack(spacing: depth > 0 ? 3 : 6) {
-                        SidebarIcon(
-                            name: isExpanded ? "folder.fill" : "folder",
-                            color: .appMuted
-                        )
-                            .offset(x: depth > 0 ? -3 : 0)
-                        Text(folder.name)
-                            .font(.system(size: 13))
-                            .foregroundColor(.appText)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.vertical, 7)
-                    .padding(.leading, 10 + CGFloat(depth) * 22)
-                }
-                .buttonStyle(.plain)
-
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.appMuted)
-                    .frame(width: 26, height: 28)
-                    .contentShape(Rectangle())
-                    .help("拖拽移动文件夹")
-                    .onDrag {
-                        LibraryFolderDragPayload(
-                            folderID: folder.id,
-                            sourceParentID: parentFolderID
-                        ).itemProvider()
-                    }
-                    .opacity(isHovering ? 1 : 0.45)
-                }
-                .padding(.trailing, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isDropTargeted ? Color.appAccent.opacity(0.2) : (isHovering ? Color.appHoverBg : .clear))
+            HStack(spacing: depth > 0 ? 3 : 6) {
+                SidebarIcon(
+                    name: isExpanded ? "folder.fill" : "folder",
+                    color: .appMuted
                 )
-                .contentShape(Rectangle())
-                .onHover { isHovering = $0 }
-                .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isDropTargeted) { providers, _ in
-                    onImportIntoFolder(folder.id, providers)
+                    .offset(x: depth > 0 ? -3 : 0)
+                Text(folder.name)
+                    .font(.system(size: 13))
+                    .foregroundColor(.appText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 7)
+            .padding(.leading, 10 + CGFloat(depth) * 22)
+            .padding(.trailing, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isDropTargeted ? Color.appAccent.opacity(0.2) : (isHovering ? Color.appHoverBg : .clear))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard hasExpandableContent else { return }
+                if isExpanded {
+                    collapsedFolderIDs.insert(folder.id)
+                } else {
+                    collapsedFolderIDs.remove(folder.id)
                 }
+            }
+            .onDrag {
+                LibraryFolderDragPayload(
+                    folderID: folder.id,
+                    sourceParentID: parentFolderID
+                ).itemProvider()
+            }
+            .onHover { isHovering = $0 }
+            .help("单击展开或折叠；拖拽移动文件夹")
+            .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isDropTargeted) { providers, _ in
+                onImportIntoFolder(folder.id, providers)
+            }
 
             if isExpanded {
             VStack(alignment: .leading, spacing: 2) {
