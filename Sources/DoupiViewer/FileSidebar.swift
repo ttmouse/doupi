@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let libraryFileDragType = UTType.utf8PlainText
+private let libraryFileDragType = UTType.plainText
 private let libraryFileDragPrefix = "doupi-library-file:"
 private let libraryFolderDragPrefix = "doupi-library-folder:"
 
@@ -1225,7 +1225,7 @@ private struct LibraryFolderBranch: View {
             Divider()
             Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
         }
-        .onDrop(of: [.utf8PlainText, .fileURL], isTargeted: nil) { providers, _ in
+        .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: nil) { providers, _ in
             onImportIntoFolder(folder.id, providers)
         }
     }
