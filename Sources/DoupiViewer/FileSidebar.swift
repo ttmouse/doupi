@@ -1411,6 +1411,10 @@ private struct FileItemContextMenu: View {
         Button("在访达中显示") {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
+        Button("复制文件路径") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.path, forType: .string)
+        }
         if let removeTitle, let onRemove {
             Divider()
             Button(removeTitle) { onRemove() }
