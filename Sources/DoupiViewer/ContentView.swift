@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
     @State private var sidebarFilterFocused = false
+    @AppStorage("DoupiSidebarWidth") private var sidebarWidth = 240.0
 
     // MARK: - Search
 
@@ -31,13 +32,15 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if sidebarVisible {
                 FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
-                    .frame(width: 240)
+                    .frame(width: sidebarWidth)
                     .background(Color.appInfoBg)
                     .preferredColorScheme(.light)
                     .onChange(of: fileURL) { _, newURL in
                         guard let url = newURL else { return }
                         loadFile(url: url)
                     }
+
+                SidebarResizeHandle(width: $sidebarWidth)
 
             }
 
@@ -300,5 +303,46 @@ struct ContentView: View {
             }
             return event
         }
+    }
+}
+
+private struct SidebarResizeHandle: View {
+    @Binding var width: Double
+    @State private var dragStartWidth: Double?
+    @State private var isHovering = false
+    @State private var hasResizeCursor = false
+
+    private let minimumWidth = 180.0
+    private let maximumWidth = 480.0
+
+    var body: some View {
+        Rectangle()
+            .fill(isHovering ? Color.appAccent.opacity(0.35) : Color.clear)
+            .frame(width: 6)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering && !hasResizeCursor {
+                    NSCursor.resizeLeftRight.push()
+                    hasResizeCursor = true
+                } else if !hovering && hasResizeCursor {
+                    NSCursor.pop()
+                    hasResizeCursor = false
+                }
+            }
+            .onDisappear {
+                if hasResizeCursor { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if dragStartWidth == nil { dragStartWidth = width }
+                        guard let dragStartWidth else { return }
+                        width = min(maximumWidth, max(minimumWidth, dragStartWidth + value.translation.width))
+                    }
+                    .onEnded { _ in
+                        dragStartWidth = nil
+                    }
+            )
     }
 }
