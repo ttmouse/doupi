@@ -354,7 +354,7 @@ private struct SidebarResizeHandle: View {
                 if hasResizeCursor { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 0)
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
                     .onChanged { value in
                         if dragStartWidth == nil { dragStartWidth = width }
                         guard let dragStartWidth else { return }
