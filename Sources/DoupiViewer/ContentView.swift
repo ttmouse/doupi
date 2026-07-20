@@ -20,8 +20,6 @@ struct ContentView: View {
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
     @State private var sidebarFilterFocused = false
-    @AppStorage("DoupiSidebarWidth") private var storedSidebarWidth = 240.0
-    @State private var sidebarWidth = 240.0
 
     // MARK: - Search
 
@@ -32,17 +30,14 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             if sidebarVisible {
-                FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
-                    .frame(width: sidebarWidth)
-                    .background(Color.appInfoBg)
-                    .preferredColorScheme(.light)
-                    .onChange(of: fileURL) { _, newURL in
-                        guard let url = newURL else { return }
-                        loadFile(url: url)
-                    }
-
-                SidebarResizeHandle(width: $sidebarWidth) {
-                    storedSidebarWidth = sidebarWidth
+                ResizableSidebar {
+                    FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
+                        .background(Color.appInfoBg)
+                        .preferredColorScheme(.light)
+                        .onChange(of: fileURL) { _, newURL in
+                            guard let url = newURL else { return }
+                            loadFile(url: url)
+                        }
                 }
 
             }
@@ -77,7 +72,6 @@ struct ContentView: View {
                 handleDrop(providers)
             }
             .onAppear {
-                sidebarWidth = min(480, max(180, storedSidebarWidth))
                 eventMonitor = registerKeyboardShortcuts()
             }
             .onDisappear {
@@ -306,6 +300,29 @@ struct ContentView: View {
                 return nil
             }
             return event
+        }
+    }
+}
+
+private struct ResizableSidebar<Content: View>: View {
+    let content: Content
+    @AppStorage("DoupiSidebarWidth") private var storedWidth = 240.0
+    @State private var width = 240.0
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+                .frame(width: width)
+            SidebarResizeHandle(width: $width) {
+                storedWidth = width
+            }
+        }
+        .onAppear {
+            width = min(480, max(180, storedWidth))
         }
     }
 }
