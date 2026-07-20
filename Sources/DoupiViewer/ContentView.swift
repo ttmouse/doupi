@@ -20,7 +20,8 @@ struct ContentView: View {
     @State private var eventMonitor: Any? = nil
     @State private var sidebarRefresh = 0
     @State private var sidebarFilterFocused = false
-    @AppStorage("DoupiSidebarWidth") private var sidebarWidth = 240.0
+    @AppStorage("DoupiSidebarWidth") private var storedSidebarWidth = 240.0
+    @State private var sidebarWidth = 240.0
 
     // MARK: - Search
 
@@ -40,7 +41,9 @@ struct ContentView: View {
                         loadFile(url: url)
                     }
 
-                SidebarResizeHandle(width: $sidebarWidth)
+                SidebarResizeHandle(width: $sidebarWidth) {
+                    storedSidebarWidth = sidebarWidth
+                }
 
             }
 
@@ -74,6 +77,7 @@ struct ContentView: View {
                 handleDrop(providers)
             }
             .onAppear {
+                sidebarWidth = min(480, max(180, storedSidebarWidth))
                 eventMonitor = registerKeyboardShortcuts()
             }
             .onDisappear {
@@ -308,8 +312,8 @@ struct ContentView: View {
 
 private struct SidebarResizeHandle: View {
     @Binding var width: Double
+    let onResizeEnded: () -> Void
     @State private var dragStartWidth: Double?
-    @State private var isHovering = false
     @State private var hasResizeCursor = false
 
     private let minimumWidth = 180.0
@@ -317,11 +321,10 @@ private struct SidebarResizeHandle: View {
 
     var body: some View {
         Rectangle()
-            .fill(isHovering ? Color.appAccent.opacity(0.35) : Color.clear)
+            .fill(Color.clear)
             .frame(width: 6)
             .contentShape(Rectangle())
             .onHover { hovering in
-                isHovering = hovering
                 if hovering && !hasResizeCursor {
                     NSCursor.resizeLeftRight.push()
                     hasResizeCursor = true
@@ -342,6 +345,7 @@ private struct SidebarResizeHandle: View {
                     }
                     .onEnded { _ in
                         dragStartWidth = nil
+                        onResizeEnded()
                     }
             )
     }
