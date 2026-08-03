@@ -30,14 +30,15 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             if sidebarVisible {
-                FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
-                    .frame(width: 240)
-                    .background(Color.appInfoBg)
-                    .preferredColorScheme(.light)
-                    .onChange(of: fileURL) { _, newURL in
-                        guard let url = newURL else { return }
-                        loadFile(url: url)
-                    }
+                ResizableSidebar {
+                    FileSidebar(selectedURL: $fileURL, refreshToken: sidebarRefresh, focusFilter: $sidebarFilterFocused)
+                        .background(Color.appInfoBg)
+                        .preferredColorScheme(.light)
+                        .onChange(of: fileURL) { _, newURL in
+                            guard let url = newURL else { return }
+                            loadFile(url: url)
+                        }
+                }
 
             }
 
@@ -300,5 +301,69 @@ struct ContentView: View {
             }
             return event
         }
+    }
+}
+
+private struct ResizableSidebar<Content: View>: View {
+    let content: Content
+    @AppStorage("DoupiSidebarWidth") private var storedWidth = 240.0
+    @State private var width = 240.0
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+                .frame(width: width)
+            SidebarResizeHandle(width: $width) {
+                storedWidth = width
+            }
+        }
+        .onAppear {
+            width = min(480, max(180, storedWidth))
+        }
+    }
+}
+
+private struct SidebarResizeHandle: View {
+    @Binding var width: Double
+    let onResizeEnded: () -> Void
+    @State private var dragStartWidth: Double?
+    @State private var hasResizeCursor = false
+
+    private let minimumWidth = 180.0
+    private let maximumWidth = 480.0
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 6)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering && !hasResizeCursor {
+                    NSCursor.resizeLeftRight.push()
+                    hasResizeCursor = true
+                } else if !hovering && hasResizeCursor {
+                    NSCursor.pop()
+                    hasResizeCursor = false
+                }
+            }
+            .onDisappear {
+                if hasResizeCursor { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { value in
+                        if dragStartWidth == nil { dragStartWidth = width }
+                        guard let dragStartWidth else { return }
+                        width = min(maximumWidth, max(minimumWidth, dragStartWidth + value.translation.width))
+                    }
+                    .onEnded { _ in
+                        dragStartWidth = nil
+                        onResizeEnded()
+                    }
+            )
     }
 }

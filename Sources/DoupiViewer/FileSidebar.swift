@@ -1,6 +1,46 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private let libraryFileDragType = UTType.plainText
+private let libraryFileDragPrefix = "doupi-library-file:"
+private let libraryFolderDragPrefix = "doupi-library-folder:"
+
+private struct LibraryFileDragPayload: Codable {
+    let fileID: UUID
+    let sourceFolderID: UUID
+
+    func itemProvider() -> NSItemProvider {
+        let data = try? JSONEncoder().encode(self)
+        let encoded = data?.base64EncodedString() ?? ""
+        return NSItemProvider(object: (libraryFileDragPrefix + encoded) as NSString)
+    }
+
+    static func from(_ string: String) -> LibraryFileDragPayload? {
+        guard string.hasPrefix(libraryFileDragPrefix),
+              let data = Data(base64Encoded: String(string.dropFirst(libraryFileDragPrefix.count)))
+        else { return nil }
+        return try? JSONDecoder().decode(LibraryFileDragPayload.self, from: data)
+    }
+}
+
+private struct LibraryFolderDragPayload: Codable {
+    let folderID: UUID
+    let sourceParentID: UUID?
+
+    func itemProvider() -> NSItemProvider {
+        let data = try? JSONEncoder().encode(self)
+        let encoded = data?.base64EncodedString() ?? ""
+        return NSItemProvider(object: (libraryFolderDragPrefix + encoded) as NSString)
+    }
+
+    static func from(_ string: String) -> LibraryFolderDragPayload? {
+        guard string.hasPrefix(libraryFolderDragPrefix),
+              let data = Data(base64Encoded: String(string.dropFirst(libraryFolderDragPrefix.count)))
+        else { return nil }
+        return try? JSONDecoder().decode(LibraryFolderDragPayload.self, from: data)
+    }
+}
+
 // MARK: - File Format Enum
 
 /// Document format categories for the sidebar filter.
@@ -168,17 +208,25 @@ struct FileSidebar: View {
     @State private var isFormatHeaderHovered = false
     @State private var isTagHeaderHovered = false
     @State private var isLibraryHeaderHovered = false
+    @State private var isLibraryRootDropTarget = false
+    @State private var isPinnedHeaderHovered = false
     @State private var isRecentHeaderHovered = false
     @State private var isLibraryHovered = false
     @State private var isRecentHovered = false
     @State private var isLibraryExpanded = true
+    @State private var isPinnedExpanded = true
     @State private var isRecentExpanded = true
+    @State private var collapsedFolderIDs: Set<UUID> = []
     @State private var libraryFolders: [LibraryFolder] = []
     @State private var showFolderNameAlert = false
     @State private var folderName = ""
     @State private var renamingFolderID: UUID? = nil
     @State private var newFolderParentID: UUID? = nil
     @State private var folderPendingDeletion: LibraryFolder? = nil
+    @State private var filePendingDeletion: URL? = nil
+    @State private var renamingFileURL: URL? = nil
+    @State private var renamingFileRowID: String? = nil
+    @State private var fileRenameName = ""
 
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
@@ -223,13 +271,17 @@ struct FileSidebar: View {
         VStack(spacing: 0) {
             searchAndFilterSection
                 .id(tagVersion)
+            if !pinnedURLs.isEmpty {
+                pinnedSection
+                    .padding(.top, isTagFilterExpanded ? 4 : 0)
+            }
             if isLibraryExpanded {
                 librarySection
                     .frame(maxHeight: .infinity)
-                    .padding(.top, isTagFilterExpanded ? 4 : 0)
+                    .padding(.top, !pinnedURLs.isEmpty ? (isPinnedExpanded ? 4 : 0) : (isTagFilterExpanded ? 4 : 0))
             } else {
                 librarySection
-                    .padding(.top, isTagFilterExpanded ? 4 : 0)
+                    .padding(.top, !pinnedURLs.isEmpty ? (isPinnedExpanded ? 4 : 0) : (isTagFilterExpanded ? 4 : 0))
             }
             recentSection
                 .padding(.top, isLibraryExpanded ? 4 : 0)
@@ -251,6 +303,7 @@ struct FileSidebar: View {
             recentFiles = FileHistory.load()
             pinnedURLs = PinnedFiles.load()
             libraryFolders = LibraryFolders.load()
+            loadExpansionState()
         }
         .onChange(of: refreshToken) { _, _ in
             recentFiles = FileHistory.load()
@@ -263,6 +316,7 @@ struct FileSidebar: View {
                 focusFilter?.wrappedValue = false
             }
         }
+        .onChange(of: expansionState) { _, state in SidebarExpansionStore.save(state) }
         .alert("新建标签", isPresented: $showNewTagAlert) {
             TextField("标签名称", text: $newTagName)
             Button("取消", role: .cancel) { }
@@ -308,6 +362,7 @@ struct FileSidebar: View {
             Button("删除 Doupi 文件夹", role: .destructive) {
                 if let folder = folderPendingDeletion {
                     LibraryFolders.remove(folder.id, from: &libraryFolders)
+                    collapsedFolderIDs.subtract(folderIDs(in: folder))
                 }
                 folderPendingDeletion = nil
             }
@@ -315,6 +370,74 @@ struct FileSidebar: View {
         } message: {
             Text("只删除 Doupi 中的组织结构，磁盘原文件不会被删除。")
         }
+        .confirmationDialog(
+            "删除“\(filePendingDeletion?.lastPathComponent ?? "")”？",
+            isPresented: Binding(
+                get: { filePendingDeletion != nil },
+                set: { if !$0 { filePendingDeletion = nil } }
+            )
+        ) {
+            Button("移到废纸篓", role: .destructive) {
+                if let url = filePendingDeletion { deleteSourceFile(url) }
+                filePendingDeletion = nil
+            }
+            Button("取消", role: .cancel) { filePendingDeletion = nil }
+        } message: {
+            Text("这会删除磁盘中的源文件，并从 Doupi 的文件列表、置顶和最近打开中移除。")
+        }
+    }
+
+    private var pinnedSection: some View {
+        VStack(spacing: 3) {
+            Button { isPinnedExpanded.toggle() } label: {
+                HStack(spacing: 4) {
+                    Text("置顶")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.appMuted)
+                    Image(systemName: isPinnedExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.appMuted)
+                        .frame(width: 8)
+                        .opacity(isPinnedHeaderHovered ? 1 : 0)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(.plain)
+            .onHover { isPinnedHeaderHovered = $0 }
+
+            if isPinnedExpanded {
+                VStack(spacing: 0) {
+                    ForEach(filteredPinnedURLs, id: \.self) { url in
+                        LibraryFileRow(
+                            file: LibraryFile(sourceURL: url),
+                            depth: 0,
+                            sourceFolderID: nil,
+                            renameRowID: "pinned:\(url.standardizedFileURL.path)",
+                            isSelected: selectedURL?.standardizedFileURL == url.standardizedFileURL,
+                            onSelect: { selectedURL = url },
+                            onRemove: nil,
+                            isPinned: true,
+                            onNewTag: beginCreatingTag,
+                            onMetadataChanged: refreshMetadata,
+                            onTogglePin: togglePin,
+                            onRenameFile: beginRenamingFile,
+                            renamingFileURL: renamingFileURL,
+                            renamingFileRowID: renamingFileRowID,
+                            fileRenameName: $fileRenameName,
+                            onRenameCommit: commitRenamingFile,
+                            onRenameCancel: cancelRenamingFile,
+                            onRequestDelete: requestSourceDeletion
+                        )
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .background(Color.appInfoBg)
     }
 
     private var librarySection: some View {
@@ -337,31 +460,40 @@ struct FileSidebar: View {
                 }
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
-                Button {
-                    renamingFolderID = nil
-                    newFolderParentID = nil
-                    folderName = ""
-                    showFolderNameAlert = true
+                Menu {
+                    Button("添加文件") { addSingleFile() }
+                    Button("添加文件夹") { addExistingFolder() }
+                    Divider()
+                    Button("新建文件夹") { beginCreatingFolder() }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.appMuted)
                 }
-                .buttonStyle(.plain)
-                .help("新建 Doupi 文件夹")
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .tint(.appMuted)
+                .help("添加或新建")
+                .opacity(isLibraryHeaderHovered ? 1 : 0)
+                .allowsHitTesting(isLibraryHeaderHovered)
+                .offset(x: 3)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(Color.clear)
+            .background(isLibraryRootDropTarget ? Color.appAccent.opacity(0.16) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .padding(.horizontal, 4)
             .onHover { isLibraryHeaderHovered = $0 }
+            .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isLibraryRootDropTarget) { providers, _ in
+                handleDropIntoRoot(providers)
+            }
 
             if isLibraryExpanded && libraryFolders.isEmpty {
                 VStack(spacing: 5) {
                     Image(systemName: "folder")
                         .font(.system(size: 20, weight: .light))
-                    Text("拖入文件夹，或新建一个")
+                    Text("拖入文件或文件夹，或新建文件夹")
                         .font(.system(size: 11))
                 }
                 .foregroundColor(.appMuted)
@@ -386,16 +518,6 @@ struct FileSidebar: View {
             } else if isLibraryExpanded {
                 SidebarScrollView(
                     content: VStack(spacing: 0) {
-                        if !filteredPinnedURLs.isEmpty {
-                            PinnedFilesBranch(
-                                urls: filteredPinnedURLs,
-                                selectedURL: selectedURL,
-                                onSelect: { selectedURL = $0 },
-                                onNewTag: beginCreatingTag,
-                                onMetadataChanged: refreshMetadata,
-                                onTogglePin: togglePin
-                            )
-                        }
                         LibraryFolderTree(
                             folders: filteredTopLevelFolders,
                             selectedURL: selectedURL,
@@ -423,13 +545,23 @@ struct FileSidebar: View {
                             pinnedURLs: pinnedURLs,
                             onNewTag: beginCreatingTag,
                             onMetadataChanged: refreshMetadata,
-                            onTogglePin: togglePin
+                            onTogglePin: togglePin,
+                            onRenameFile: beginRenamingFile,
+                            collapsedFolderIDs: $collapsedFolderIDs,
+                            renamingFileURL: renamingFileURL,
+                            renamingFileRowID: renamingFileRowID,
+                            fileRenameName: $fileRenameName,
+                            onRenameCommit: commitRenamingFile,
+                            onRenameCancel: cancelRenamingFile,
+                            onRequestDelete: requestSourceDeletion
                         )
                         if let root = filteredRootFiles {
                             ForEach(root.files) { file in
                                 LibraryFileRow(
                                     file: file,
                                     depth: 0,
+                                    sourceFolderID: root.folderID,
+                                    renameRowID: "library:\(file.id.uuidString)",
                                     isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                                     onSelect: { selectedURL = file.sourceURL },
                                     onRemove: {
@@ -438,7 +570,14 @@ struct FileSidebar: View {
                                     isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
                                     onNewTag: beginCreatingTag,
                                     onMetadataChanged: refreshMetadata,
-                                    onTogglePin: togglePin
+                                    onTogglePin: togglePin,
+                                    onRenameFile: beginRenamingFile,
+                                    renamingFileURL: renamingFileURL,
+                                    renamingFileRowID: renamingFileRowID,
+                                    fileRenameName: $fileRenameName,
+                                    onRenameCommit: commitRenamingFile,
+                                    onRenameCancel: cancelRenamingFile,
+                                    onRequestDelete: requestSourceDeletion
                                 )
                             }
                         }
@@ -619,9 +758,15 @@ struct FileSidebar: View {
                                     isSelected: selectedURL == url,
                                     isKeyboardFocused: false,
                                     onClearKeyboardFocus: { },
+                                    renameRowID: "recent:\(url.standardizedFileURL.path)",
+                                    renamingFileURL: renamingFileURL,
+                                    renamingFileRowID: renamingFileRowID,
+                                    fileRenameName: $fileRenameName,
+                                    onRenameCommit: commitRenamingFile,
+                                    onRenameCancel: cancelRenamingFile,
                                     action: { selectedURL = url }
                                 )
-                                .contextMenu { recentContextMenu(for: url) }
+                                .contextMenu { recentContextMenu(for: url, rowID: "recent:\(url.standardizedFileURL.path)") }
                             }
                         },
                         isHovered: isRecentHovered
@@ -639,6 +784,12 @@ struct FileSidebar: View {
 
     private func allURLs(_ folder: LibraryFolder) -> [URL] {
         folder.files.map(\.sourceURL) + folder.folders.flatMap(allURLs)
+    }
+
+    private func folderIDs(in folder: LibraryFolder) -> Set<UUID> {
+        Set([folder.id]).union(folder.folders.reduce(into: Set<UUID>()) { ids, child in
+            ids.formUnion(folderIDs(in: child))
+        })
     }
 
     private func isSystemInbox(_ folder: LibraryFolder) -> Bool {
@@ -671,6 +822,27 @@ struct FileSidebar: View {
         selectedTag = nil
     }
 
+    private func loadExpansionState() {
+        let state = SidebarExpansionStore.load()
+        isFormatFilterExpanded = state.isFormatFilterExpanded
+        isTagFilterExpanded = state.isTagFilterExpanded
+        isPinnedExpanded = state.isPinnedExpanded
+        isLibraryExpanded = state.isLibraryExpanded
+        isRecentExpanded = state.isRecentExpanded
+        collapsedFolderIDs = state.collapsedFolderIDs
+    }
+
+    private var expansionState: SidebarExpansionState {
+        SidebarExpansionState(
+            isFormatFilterExpanded: isFormatFilterExpanded,
+            isTagFilterExpanded: isTagFilterExpanded,
+            isPinnedExpanded: isPinnedExpanded,
+            isLibraryExpanded: isLibraryExpanded,
+            isRecentExpanded: isRecentExpanded,
+            collapsedFolderIDs: collapsedFolderIDs
+        )
+    }
+
     private func beginCreatingTag(for url: URL) {
         pendingTagURL = url
         newTagName = ""
@@ -681,14 +853,113 @@ struct FileSidebar: View {
         tagVersion = UUID()
     }
 
+    private func requestSourceDeletion(for url: URL) {
+        filePendingDeletion = url
+    }
+
+    private func beginRenamingFile(_ url: URL, rowID: String) {
+        renamingFileURL = url.standardizedFileURL
+        renamingFileRowID = rowID
+        fileRenameName = url.lastPathComponent
+    }
+
+    private func commitRenamingFile(_ url: URL) {
+        renameSourceFile(url, to: fileRenameName)
+        renamingFileURL = nil
+        renamingFileRowID = nil
+    }
+
+    private func cancelRenamingFile() {
+        renamingFileURL = nil
+        renamingFileRowID = nil
+    }
+
+    private func renameSourceFile(_ url: URL, to proposedName: String) {
+        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              !name.contains("/"),
+              name != ".",
+              name != ".."
+        else {
+            NSSound.beep()
+            return
+        }
+
+        let renamedURL = url.deletingLastPathComponent().appendingPathComponent(name).standardizedFileURL
+        guard renamedURL != url.standardizedFileURL else { return }
+        guard !FileManager.default.fileExists(atPath: renamedURL.path) else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            try FileManager.default.moveItem(at: url, to: renamedURL)
+            LibraryFolders.replaceFileURL(url, with: renamedURL, in: &libraryFolders)
+            FileHistory.replace(url, with: renamedURL)
+            recentFiles = FileHistory.load()
+            PinnedFiles.replace(url, with: renamedURL)
+            pinnedURLs = PinnedFiles.load()
+            FileTags.replaceURL(url, with: renamedURL)
+            if selectedURL?.standardizedFileURL == url.standardizedFileURL { selectedURL = renamedURL }
+            refreshMetadata()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    private func deleteSourceFile(_ url: URL) {
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            LibraryFolders.removeFile(at: url, in: &libraryFolders)
+            FileHistory.remove(url)
+            recentFiles = FileHistory.load()
+            PinnedFiles.remove(url)
+            pinnedURLs = PinnedFiles.load()
+            FileTags.removeAllTags(from: url)
+            if selectedURL?.standardizedFileURL == url.standardizedFileURL { selectedURL = nil }
+            refreshMetadata()
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    private func addSingleFile() {
+        guard let url = FileDropDelegate.openSingleFilePanel() else { return }
+        Task {
+            let imported = await Task.detached { LibraryFolders.prepareImport([url]) }.value
+            await MainActor.run {
+                LibraryFolders.apply(imported, into: &libraryFolders)
+            }
+        }
+    }
+
+    private func addExistingFolder() {
+        guard let url = FileDropDelegate.openDirectoryPanel() else { return }
+        Task {
+            let imported = await Task.detached { LibraryFolders.prepareImport([url]) }.value
+            await MainActor.run {
+                LibraryFolders.apply(imported, into: &libraryFolders)
+            }
+        }
+    }
+
+    private func beginCreatingFolder() {
+        renamingFolderID = nil
+        newFolderParentID = nil
+        folderName = ""
+        showFolderNameAlert = true
+    }
+
     @ViewBuilder
-    private func recentContextMenu(for url: URL) -> some View {
+    private func recentContextMenu(for url: URL, rowID: String) -> some View {
         FileItemContextMenu(
             url: url,
             isPinned: pinnedURLs.contains(url.standardizedFileURL),
             onNewTag: beginCreatingTag,
             onMetadataChanged: refreshMetadata,
             onTogglePin: togglePin,
+            onRenameFile: { _ in beginRenamingFile(url, rowID: rowID) },
+            onRequestDelete: requestSourceDeletion,
             removeTitle: "从最近打开移除",
             onRemove: { removeFromRecent(url) }
         )
@@ -707,6 +978,26 @@ struct FileSidebar: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider], into folderID: UUID) -> Bool {
+        let includesExternalFile = providers.contains {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+
+        if !includesExternalFile, let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(libraryFileDragType.identifier)
+        }) {
+            provider.loadObject(ofClass: NSString.self) { item, _ in
+                guard let string = item as? String else { return }
+                DispatchQueue.main.async {
+                    if let payload = LibraryFileDragPayload.from(string) {
+                        moveLibraryFile(payload, into: folderID)
+                    } else if let payload = LibraryFolderDragPayload.from(string) {
+                        moveLibraryFolder(payload, into: folderID)
+                    }
+                }
+            }
+            return true
+        }
+
         Task {
             let droppedURLs = await FileDropDelegate.collectURLs(from: providers)
             guard !droppedURLs.isEmpty else { return }
@@ -716,6 +1007,56 @@ struct FileSidebar: View {
             }
         }
         return true
+    }
+
+    private func moveLibraryFile(_ payload: LibraryFileDragPayload, into folderID: UUID) {
+        LibraryFolders.moveFile(
+            payload.fileID,
+            from: payload.sourceFolderID,
+            to: folderID,
+            in: &libraryFolders
+        )
+    }
+
+    private func moveLibraryFolder(_ payload: LibraryFolderDragPayload, into folderID: UUID) {
+        LibraryFolders.moveFolder(
+            payload.folderID,
+            from: payload.sourceParentID,
+            to: folderID,
+            in: &libraryFolders
+        )
+    }
+
+    private func handleDropIntoRoot(_ providers: [NSItemProvider]) -> Bool {
+        let includesExternalFile = providers.contains {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+
+        if !includesExternalFile, let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(libraryFileDragType.identifier)
+        }) {
+            provider.loadObject(ofClass: NSString.self) { item, _ in
+                guard let string = item as? String else { return }
+                DispatchQueue.main.async {
+                    if let payload = LibraryFileDragPayload.from(string) {
+                        LibraryFolders.moveFileToInbox(
+                            payload.fileID,
+                            from: payload.sourceFolderID,
+                            in: &libraryFolders
+                        )
+                    } else if let payload = LibraryFolderDragPayload.from(string) {
+                        LibraryFolders.moveFolderToRoot(
+                            payload.folderID,
+                            from: payload.sourceParentID,
+                            in: &libraryFolders
+                        )
+                    }
+                }
+            }
+            return true
+        }
+
+        return handleDrop(providers)
     }
 
     private func togglePin(_ url: URL) {
@@ -747,12 +1088,21 @@ private struct LibraryFolderTree: View {
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
+    let onRenameFile: (URL, String) -> Void
+    @Binding var collapsedFolderIDs: Set<UUID>
+    let renamingFileURL: URL?
+    let renamingFileRowID: String?
+    @Binding var fileRenameName: String
+    let onRenameCommit: (URL) -> Void
+    let onRenameCancel: () -> Void
+    let onRequestDelete: (URL) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(folders) { folder in
                 LibraryFolderBranch(
                     folder: folder,
+                    parentFolderID: nil,
                     depth: 0,
                     selectedURL: selectedURL,
                     onSelectFile: onSelectFile,
@@ -764,7 +1114,15 @@ private struct LibraryFolderTree: View {
                     pinnedURLs: pinnedURLs,
                     onNewTag: onNewTag,
                     onMetadataChanged: onMetadataChanged,
-                    onTogglePin: onTogglePin
+                    onTogglePin: onTogglePin,
+                    onRenameFile: onRenameFile,
+                    collapsedFolderIDs: $collapsedFolderIDs,
+                    renamingFileURL: renamingFileURL,
+                    renamingFileRowID: renamingFileRowID,
+                    fileRenameName: $fileRenameName,
+                    onRenameCommit: onRenameCommit,
+                    onRenameCancel: onRenameCancel,
+                    onRequestDelete: onRequestDelete
                 )
             }
         }
@@ -773,6 +1131,7 @@ private struct LibraryFolderTree: View {
 
 private struct LibraryFolderBranch: View {
     let folder: LibraryFolder
+    let parentFolderID: UUID?
     let depth: Int
     let selectedURL: URL?
     let onSelectFile: (URL) -> Void
@@ -785,47 +1144,73 @@ private struct LibraryFolderBranch: View {
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
-    @State private var isExpanded = true
+    let onRenameFile: (URL, String) -> Void
+    @Binding var collapsedFolderIDs: Set<UUID>
+    let renamingFileURL: URL?
+    let renamingFileRowID: String?
+    @Binding var fileRenameName: String
+    let onRenameCommit: (URL) -> Void
+    let onRenameCancel: () -> Void
+    let onRequestDelete: (URL) -> Void
     @State private var isHovering = false
+    @State private var isDropTargeted = false
 
     private var hasExpandableContent: Bool {
         !folder.folders.isEmpty || !folder.files.isEmpty
     }
 
+    private var isExpanded: Bool {
+        !collapsedFolderIDs.contains(folder.id)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Button {
-                if hasExpandableContent { isExpanded.toggle() }
-            } label: {
-                HStack(spacing: depth > 0 ? 3 : 6) {
-                    SidebarIcon(
-                        name: isExpanded ? "folder.fill" : "folder",
-                        color: .appMuted
-                    )
-                        .offset(x: depth > 0 ? -3 : 0)
-                    Text(folder.name)
-                        .font(.system(size: 13))
-                        .foregroundColor(.appText)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 7)
-                .padding(.leading, 10 + CGFloat(depth) * 22)
-                .padding(.trailing, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isHovering ? Color.appHoverBg : .clear)
+            HStack(spacing: depth > 0 ? 3 : 6) {
+                SidebarIcon(
+                    name: isExpanded ? "folder.fill" : "folder",
+                    color: .appMuted
                 )
-                .contentShape(Rectangle())
+                    .offset(x: depth > 0 ? -3 : 0)
+                Text(folder.name)
+                    .font(.system(size: 13))
+                    .foregroundColor(.appText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
+            .padding(.vertical, 7)
+            .padding(.leading, 10 + CGFloat(depth) * 22)
+            .padding(.trailing, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isDropTargeted ? Color.appAccent.opacity(0.2) : (isHovering ? Color.appHoverBg : .clear))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard hasExpandableContent else { return }
+                if isExpanded {
+                    collapsedFolderIDs.insert(folder.id)
+                } else {
+                    collapsedFolderIDs.remove(folder.id)
+                }
+            }
+            .onDrag {
+                LibraryFolderDragPayload(
+                    folderID: folder.id,
+                    sourceParentID: parentFolderID
+                ).itemProvider()
+            }
             .onHover { isHovering = $0 }
+            .help("单击展开或折叠；拖拽移动文件夹")
+            .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isDropTargeted) { providers, _ in
+                onImportIntoFolder(folder.id, providers)
+            }
 
             if isExpanded {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(folder.folders) { child in
                     LibraryFolderBranch(
                         folder: child,
+                        parentFolderID: folder.id,
                         depth: depth + 1,
                         selectedURL: selectedURL,
                         onSelectFile: onSelectFile,
@@ -837,20 +1222,37 @@ private struct LibraryFolderBranch: View {
                         pinnedURLs: pinnedURLs,
                         onNewTag: onNewTag,
                         onMetadataChanged: onMetadataChanged,
-                        onTogglePin: onTogglePin
+                        onTogglePin: onTogglePin,
+                        onRenameFile: onRenameFile,
+                        collapsedFolderIDs: $collapsedFolderIDs,
+                        renamingFileURL: renamingFileURL,
+                        renamingFileRowID: renamingFileRowID,
+                        fileRenameName: $fileRenameName,
+                        onRenameCommit: onRenameCommit,
+                        onRenameCancel: onRenameCancel,
+                        onRequestDelete: onRequestDelete
                     )
                 }
                 ForEach(folder.files) { file in
                     LibraryFileRow(
                         file: file,
                         depth: depth + 1,
+                        sourceFolderID: folder.id,
+                        renameRowID: "library:\(file.id.uuidString)",
                         isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                         onSelect: { onSelectFile(file.sourceURL) },
                         onRemove: { onRemoveFile(folder.id, file.id) },
                         isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
                         onNewTag: onNewTag,
                         onMetadataChanged: onMetadataChanged,
-                        onTogglePin: onTogglePin
+                        onTogglePin: onTogglePin,
+                        onRenameFile: onRenameFile,
+                        renamingFileURL: renamingFileURL,
+                        renamingFileRowID: renamingFileRowID,
+                        fileRenameName: $fileRenameName,
+                        onRenameCommit: onRenameCommit,
+                        onRenameCancel: onRenameCancel,
+                        onRequestDelete: onRequestDelete
                     )
                 }
             }
@@ -862,15 +1264,14 @@ private struct LibraryFolderBranch: View {
             Divider()
             Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers, _ in
-            onImportIntoFolder(folder.id, providers)
-        }
     }
 }
 
 private struct LibraryFileRow: View {
     let file: LibraryFile
     let depth: Int
+    let sourceFolderID: UUID?
+    let renameRowID: String
     let isSelected: Bool
     let onSelect: () -> Void
     let onRemove: (() -> Void)?
@@ -878,7 +1279,20 @@ private struct LibraryFileRow: View {
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
+    let onRenameFile: (URL, String) -> Void
+    let renamingFileURL: URL?
+    let renamingFileRowID: String?
+    @Binding var fileRenameName: String
+    let onRenameCommit: (URL) -> Void
+    let onRenameCancel: () -> Void
+    let onRequestDelete: (URL) -> Void
     @State private var isHovering = false
+    @FocusState private var isRenameFieldFocused: Bool
+
+    private var isRenaming: Bool {
+        renamingFileURL?.standardizedFileURL == file.sourceURL.standardizedFileURL
+            && renamingFileRowID == renameRowID
+    }
 
     var body: some View {
         HStack(spacing: depth > 0 ? 3 : 6) {
@@ -893,10 +1307,24 @@ private struct LibraryFileRow: View {
                 }
             }
                 .offset(x: depth > 0 ? -3 : 0)
-            Text(file.name)
-                .font(.system(size: 13))
-                .foregroundColor(file.isAvailable ? .appText : .appMuted)
-                .lineLimit(1)
+            if isRenaming {
+                TextField("文件名", text: $fileRenameName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundColor(.appText)
+                    .focused($isRenameFieldFocused)
+                    .onAppear { isRenameFieldFocused = true }
+                    .onSubmit { onRenameCommit(file.sourceURL) }
+                    .onExitCommand { onRenameCancel() }
+                    .onChange(of: isRenameFieldFocused) { _, focused in
+                        if !focused && isRenaming { onRenameCancel() }
+                    }
+            } else {
+                Text(file.name)
+                    .font(.system(size: 13))
+                    .foregroundColor(file.isAvailable ? .appText : .appMuted)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 0)
 
             Button { onTogglePin(file.sourceURL) } label: {
@@ -932,59 +1360,15 @@ private struct LibraryFileRow: View {
                 onNewTag: onNewTag,
                 onMetadataChanged: onMetadataChanged,
                 onTogglePin: onTogglePin,
-                removeTitle: onRemove == nil ? nil : "从文件夹移除",
+                onRenameFile: { _ in onRenameFile(file.sourceURL, renameRowID) },
+                onRequestDelete: onRequestDelete,
+                removeTitle: onRemove == nil ? nil : "从列表移除",
                 onRemove: onRemove
             )
         }
-    }
-}
-
-private struct PinnedFilesBranch: View {
-    let urls: [URL]
-    let selectedURL: URL?
-    let onSelect: (URL) -> Void
-    let onNewTag: (URL) -> Void
-    let onMetadataChanged: () -> Void
-    let onTogglePin: (URL) -> Void
-    @State private var isExpanded = true
-    @State private var isHovering = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Button { isExpanded.toggle() } label: {
-                HStack(spacing: 6) {
-                    SidebarIcon(name: "pin.fill", color: .appMuted)
-                    Text("置顶")
-                        .font(.system(size: 13))
-                        .foregroundColor(.appText)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 7)
-                .padding(.horizontal, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isHovering ? Color.appHoverBg : .clear)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { isHovering = $0 }
-
-            if isExpanded {
-                ForEach(urls, id: \.self) { url in
-                    LibraryFileRow(
-                        file: LibraryFile(sourceURL: url),
-                        depth: 1,
-                        isSelected: selectedURL?.standardizedFileURL == url.standardizedFileURL,
-                        onSelect: { onSelect(url) },
-                        onRemove: nil,
-                        isPinned: true,
-                        onNewTag: onNewTag,
-                        onMetadataChanged: onMetadataChanged,
-                        onTogglePin: onTogglePin
-                    )
-                }
-            }
+        .onDrag {
+            guard let sourceFolderID else { return NSItemProvider() }
+            return LibraryFileDragPayload(fileID: file.id, sourceFolderID: sourceFolderID).itemProvider()
         }
     }
 }
@@ -995,6 +1379,8 @@ private struct FileItemContextMenu: View {
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
+    let onRenameFile: (URL) -> Void
+    let onRequestDelete: (URL) -> Void
     let removeTitle: String?
     let onRemove: (() -> Void)?
 
@@ -1016,10 +1402,25 @@ private struct FileItemContextMenu: View {
         Button("新建标签...") { onNewTag(url) }
         Divider()
         Button(isPinned ? "取消置顶" : "置顶") { onTogglePin(url) }
+        Divider()
+        Button("重命名") { onRenameFile(url) }
+        Button("用默认程序打开") {
+            NSWorkspace.shared.open(url)
+        }
+        Divider()
+        Button("在访达中显示") {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+        Button("复制文件路径") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.path, forType: .string)
+        }
         if let removeTitle, let onRemove {
             Divider()
             Button(removeTitle) { onRemove() }
         }
+        Divider()
+        Button("删除文件", role: .destructive) { onRequestDelete(url) }
     }
 }
 
@@ -1030,9 +1431,21 @@ private struct SidebarRow: View {
     let isSelected: Bool
     let isKeyboardFocused: Bool
     let onClearKeyboardFocus: () -> Void
+    let renameRowID: String
+    let renamingFileURL: URL?
+    let renamingFileRowID: String?
+    @Binding var fileRenameName: String
+    let onRenameCommit: (URL) -> Void
+    let onRenameCancel: () -> Void
     let action: () -> Void
 
     @State private var isHovering = false
+    @FocusState private var isRenameFieldFocused: Bool
+
+    private var isRenaming: Bool {
+        renamingFileURL?.standardizedFileURL == url.standardizedFileURL
+            && renamingFileRowID == renameRowID
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1041,11 +1454,25 @@ private struct SidebarRow: View {
                 color: isSelected ? .appAccent : .appMuted
             )
 
-            Text(url.lastPathComponent)
-                .font(.system(size: 13))
-                .foregroundColor(.appText)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if isRenaming {
+                TextField("文件名", text: $fileRenameName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundColor(.appText)
+                    .focused($isRenameFieldFocused)
+                    .onAppear { isRenameFieldFocused = true }
+                    .onSubmit { onRenameCommit(url) }
+                    .onExitCommand { onRenameCancel() }
+                    .onChange(of: isRenameFieldFocused) { _, focused in
+                        if !focused && isRenaming { onRenameCancel() }
+                    }
+            } else {
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13))
+                    .foregroundColor(.appText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
 
             Spacer(minLength: 0)
         }

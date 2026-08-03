@@ -26,6 +26,17 @@ enum FileHistory {
         return load().contains(standard)
     }
 
+    static func remove(_ url: URL) {
+        let standard = url.standardizedFileURL
+        save(load().filter { $0 != standard })
+    }
+
+    static func replace(_ url: URL, with renamedURL: URL) {
+        let standard = url.standardizedFileURL
+        let renamed = renamedURL.standardizedFileURL
+        save(load().map { $0 == standard ? renamed : $0 })
+    }
+
     static func save(_ urls: [URL]) {
         guard let data = try? JSONEncoder().encode(Array(urls.prefix(limit))) else { return }
         UserDefaults.standard.set(data, forKey: key)

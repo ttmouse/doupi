@@ -42,4 +42,28 @@ enum FileDropDelegate {
         guard panel.runModal() == .OK else { return [] }
         return panel.urls.map { $0.standardizedFileURL }
     }
+
+    /// Presents a file-only panel for importing one file into the Doupi library.
+    static func openSingleFilePanel() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.title = "添加文件"
+        panel.message = "选择一个要添加到 Doupi 文件列表的文件"
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url?.standardizedFileURL
+    }
+
+    /// Presents a directory-only panel for importing one existing folder.
+    static func openDirectoryPanel() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "添加文件夹"
+        panel.message = "选择一个要添加到 Doupi 文件列表的文件夹"
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url?.standardizedFileURL
+    }
 }

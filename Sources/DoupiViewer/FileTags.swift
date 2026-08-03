@@ -56,6 +56,19 @@ enum FileTags {
         }
     }
 
+    static func removeAllTags(from url: URL) {
+        var dict = load()
+        dict.removeValue(forKey: url.standardizedFileURL)
+        save(dict)
+    }
+
+    static func replaceURL(_ url: URL, with renamedURL: URL) {
+        var dict = load()
+        guard let tags = dict.removeValue(forKey: url.standardizedFileURL) else { return }
+        dict[renamedURL.standardizedFileURL, default: []].formUnion(tags)
+        save(dict)
+    }
+
     /// All unique tag names across all files, sorted.
     static func allTags() -> [String] {
         let dict = load()
