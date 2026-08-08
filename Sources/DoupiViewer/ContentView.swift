@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 /// Main content area with sidebar + document viewer.
 struct ContentView: View {
 
+    @EnvironmentObject private var openRouter: OpenFileRouter
+
     @State private var fileURL: URL?
     @State private var fileInfo: FileInfo?
     @State private var isDragOver = false
@@ -73,6 +75,10 @@ struct ContentView: View {
             }
             .onAppear {
                 eventMonitor = registerKeyboardShortcuts()
+                consumePendingOpenURL()
+            }
+            .onChange(of: openRouter.pendingURL) { _, _ in
+                consumePendingOpenURL()
             }
             .onDisappear {
                 if let monitor = eventMonitor {
@@ -216,6 +222,14 @@ struct ContentView: View {
         fileInfo = info
         FileHistory.add(url)
         sidebarRefresh += 1
+    }
+
+    /// Loads a file URL delivered by the system ("Open With" / default app
+    /// launch). Handles both cold start (view not yet mounted) and hot path.
+    private func consumePendingOpenURL() {
+        guard let url = openRouter.pendingURL else { return }
+        openRouter.pendingURL = nil
+        loadFile(url: url)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {

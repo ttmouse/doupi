@@ -4,14 +4,37 @@ import SwiftUI
 /// Entry point for Doupi Viewer.
 @main
 struct DoupiApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        WindowGroup(id: "main") {
+        Window("Doupi", id: "main") {
             ContentView()
                 .frame(minWidth: 720, minHeight: 400)
                 .windowHidesTitlebar()
+                .environmentObject(appDelegate.openRouter)
         }
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
+    }
+}
+
+/// Bridges file URLs handed to the app by LaunchServices ("Open With" /
+/// default application) into the SwiftUI view tree.
+final class OpenFileRouter: ObservableObject {
+    @Published var pendingURL: URL?
+}
+
+/// App delegate that receives files opened via the system.
+///
+/// When DoupiViewer is set as the default app for a file type, double-clicking
+/// a file launches the app and calls `application(_:open:)` with the URL.
+/// Without this delegate the file is silently dropped — the window opens with
+/// no preview.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let openRouter = OpenFileRouter()
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        openRouter.pendingURL = urls.first?.standardizedFileURL
     }
 }
 
