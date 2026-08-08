@@ -203,10 +203,8 @@ struct FileSidebar: View {
     @State private var newTagName = ""
     @State private var pendingTagURL: URL? = nil
     @State private var pinnedURLs: Set<URL> = []
-    @State private var isFormatFilterExpanded = true
-    @State private var isTagFilterExpanded = true
-    @State private var isFormatHeaderHovered = false
-    @State private var isTagHeaderHovered = false
+    @State private var isFormatFilterPresented = false
+    @State private var isTagFilterPresented = false
     @State private var isLibraryHeaderHovered = false
     @State private var isLibraryRootDropTarget = false
     @State private var isPinnedHeaderHovered = false
@@ -235,6 +233,11 @@ struct FileSidebar: View {
         !filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || selectedFormat != nil
             || selectedTag != nil
+    }
+
+    /// 置顶区仅在无搜索/筛选时显示；搜索结果场景中让位给结果列表。
+    private var isPinnedSectionVisible: Bool {
+        !hasActiveFilters && !pinnedURLs.isEmpty
     }
 
     private var filteredLibraryFolders: [LibraryFolder] {
@@ -271,17 +274,17 @@ struct FileSidebar: View {
         VStack(spacing: 0) {
             searchAndFilterSection
                 .id(tagVersion)
-            if !pinnedURLs.isEmpty {
+            if isPinnedSectionVisible {
                 pinnedSection
-                    .padding(.top, isTagFilterExpanded ? 4 : 0)
+                    .padding(.top, 4)
             }
             if isLibraryExpanded {
                 librarySection
                     .frame(maxHeight: .infinity)
-                    .padding(.top, !pinnedURLs.isEmpty ? (isPinnedExpanded ? 4 : 0) : (isTagFilterExpanded ? 4 : 0))
+                    .padding(.top, isPinnedSectionVisible ? (isPinnedExpanded ? 4 : 0) : 4)
             } else {
                 librarySection
-                    .padding(.top, !pinnedURLs.isEmpty ? (isPinnedExpanded ? 4 : 0) : (isTagFilterExpanded ? 4 : 0))
+                    .padding(.top, isPinnedSectionVisible ? (isPinnedExpanded ? 4 : 0) : 4)
             }
             recentSection
                 .padding(.top, isLibraryExpanded ? 4 : 0)
@@ -315,6 +318,11 @@ struct FileSidebar: View {
                 isFilterFocused = true
                 focusFilter?.wrappedValue = false
             }
+        }
+        .onChange(of: hasActiveFilters) { _, active in
+            // 搜索结果场景会替换文件树，行内重命名随行销毁；避免清除筛选后树重现时
+            // 残留的重命名状态被意外恢复
+            if active { cancelRenamingFile() }
         }
         .onChange(of: expansionState) { _, state in SidebarExpansionStore.save(state) }
         .alert("新建标签", isPresented: $showNewTagAlert) {
@@ -442,6 +450,8 @@ struct FileSidebar: View {
 
     private var librarySection: some View {
         VStack(spacing: 3) {
+            // 搜索结果场景不显示“文件”标题，直接展示结果列表
+            if !hasActiveFilters {
             HStack(spacing: 5) {
                 Button { isLibraryExpanded.toggle() } label: {
                     HStack(spacing: 4) {
@@ -488,8 +498,11 @@ struct FileSidebar: View {
             .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isLibraryRootDropTarget) { providers, _ in
                 handleDropIntoRoot(providers)
             }
+            }
 
-            if isLibraryExpanded && libraryFolders.isEmpty {
+            if hasActiveFilters {
+                searchResultsSection
+            } else if isLibraryExpanded && libraryFolders.isEmpty {
                 VStack(spacing: 5) {
                     Image(systemName: "folder")
                         .font(.system(size: 20, weight: .light))
@@ -499,21 +512,6 @@ struct FileSidebar: View {
                 .foregroundColor(.appMuted)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                Spacer()
-            } else if isLibraryExpanded && filteredTopLevelFolders.isEmpty && filteredRootFiles?.files.isEmpty != false {
-                VStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 20, weight: .light))
-                    Text("没有匹配的文件")
-                        .font(.system(size: 11))
-                    Button("清除筛选") { clearFilters() }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.appAccent)
-                }
-                .foregroundColor(.appMuted)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
                 Spacer()
             } else if isLibraryExpanded {
                 SidebarScrollView(
@@ -591,129 +589,244 @@ struct FileSidebar: View {
         .background(Color.appInfoBg)
     }
 
+    /// 搜索/筛选激活时的独立搜索结果场景：扁平列出所有匹配文件，覆盖文件树。
+    /// 文件树因为文件夹层级导致匹配结果分散、呈现效率低；这里生成一张平铺列表，
+    /// 每行带所在文件夹路径帮助定位。
+    private var searchResultsSection: some View {
+        let results = collectSearchResults()
+        return VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text("搜索结果")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.appMuted)
+                Text("\(results.count) 个文件")
+                    .font(.system(size: 11))
+                    .foregroundColor(.appMuted.opacity(0.7))
+                Spacer(minLength: 0)
+                Button("清除筛选") { clearFilters() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.appAccent)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 2)
+            .padding(.bottom, 4)
+
+            if results.isEmpty {
+                VStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 20, weight: .light))
+                    Text("没有匹配的文件")
+                        .font(.system(size: 11))
+                }
+                .foregroundColor(.appMuted)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                Spacer()
+            } else {
+                SidebarScrollView(
+                    content: VStack(spacing: 0) {
+                        ForEach(results) { item in
+                            SearchResultRow(
+                                file: item.file,
+                                folderPath: item.folderPath,
+                                folderID: item.folderID,
+                                isSelected: selectedURL?.standardizedFileURL == item.file.sourceURL.standardizedFileURL,
+                                isPinned: pinnedURLs.contains(item.file.sourceURL.standardizedFileURL),
+                                onSelect: { selectedURL = item.file.sourceURL },
+                                onRemove: {
+                                    LibraryFolders.removeFile(item.file.id, from: item.folderID, in: &libraryFolders)
+                                },
+                                onNewTag: beginCreatingTag,
+                                onMetadataChanged: refreshMetadata,
+                                onTogglePin: togglePin,
+                                onRequestDelete: requestSourceDeletion
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 4),
+                    isHovered: isLibraryHovered
+                )
+                .onHover { isLibraryHovered = $0 }
+            }
+        }
+    }
+
     private var searchAndFilterSection: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.appMuted)
-                TextField("筛选文件...", text: $filterText)
-                    .font(.system(size: 12))
-                    .foregroundColor(.appText)
-                    .textFieldStyle(.plain)
-                    .focused($isFilterFocused)
-                if !filterText.isEmpty {
-                    Button(action: { filterText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(.appMuted)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.appMuted)
+                    TextField("筛选文件...", text: $filterText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.appText)
+                        .textFieldStyle(.plain)
+                        .focused($isFilterFocused)
+                    if !filterText.isEmpty {
+                        Button(action: { filterText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.appMuted)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color.appBorder, lineWidth: 0.5)
+                )
+
+                filterIconButton(
+                    systemName: "square.grid.2x2",
+                    isActive: selectedFormat != nil,
+                    tooltip: "格式筛选"
+                ) { isFormatFilterPresented.toggle() }
+                .popover(isPresented: $isFormatFilterPresented, arrowEdge: .bottom) {
+                    formatFilterPopover
+                }
+
+                filterIconButton(
+                    systemName: "tag",
+                    isActive: selectedTag != nil,
+                    tooltip: "标签筛选"
+                ) { isTagFilterPresented.toggle() }
+                .popover(isPresented: $isTagFilterPresented, arrowEdge: .bottom) {
+                    tagFilterPopover
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(Color.appBorder, lineWidth: 0.5)
-            )
             .padding(.horizontal, 10)
             .padding(.top, 10)
             .padding(.bottom, 6)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Button(action: { isFormatFilterExpanded.toggle() }) {
-                    HStack(spacing: 4) {
-                        Text("格式筛选")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.appMuted)
-                        Image(systemName: isFormatFilterExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.appMuted)
-                            .frame(width: 8)
-                            .opacity(isFormatHeaderHovered ? 1 : 0)
-                        Spacer(minLength: 0)
-                    }
+            if selectedFormat != nil || selectedTag != nil {
+                activeFilterChips
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(.horizontal, 4)
-                }
-                .buttonStyle(.plain)
-                .onHover { isFormatHeaderHovered = $0 }
-
-                if isFormatFilterExpanded {
-                    FormatRow(
-                        label: "全部",
-                        icon: "default",
-                        count: allLibraryURLs.count,
-                        isSelected: selectedFormat == nil
-                    ) { selectedFormat = nil }
-
-                    ForEach(FileFormat.allCases, id: \.self) { format in
-                        let count = allLibraryURLs.filter { FileFormat.for($0) == format }.count
-                        if count > 0 {
-                            FormatRow(
-                                label: format.rawValue,
-                                icon: format.icon,
-                                count: count,
-                                isSelected: selectedFormat == format
-                            ) { selectedFormat = selectedFormat == format ? nil : format }
-                        }
-                    }
-                }
+                    .padding(.bottom, 4)
             }
-            .padding(.bottom, 4)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Button(action: { isTagFilterExpanded.toggle() }) {
-                    HStack(spacing: 4) {
-                        Text("标签筛选")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.appMuted)
-                        Image(systemName: isTagFilterExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.appMuted)
-                            .frame(width: 8)
-                            .opacity(isTagHeaderHovered ? 1 : 0)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(.horizontal, 4)
-                }
-                .buttonStyle(.plain)
-                .onHover { isTagHeaderHovered = $0 }
-
-                if isTagFilterExpanded {
-                    TagRow(
-                        label: "全部",
-                        count: allLibraryURLs.count,
-                        isSelected: selectedTag == nil,
-                        action: { selectedTag = nil }
-                    )
-
-                    ForEach(FileTags.allTags(), id: \.self) { tag in
-                        let count = allLibraryURLs.filter { FileTags.tags(for: $0).contains(tag) }.count
-                        if count > 0 {
-                            TagRow(
-                                label: tag,
-                                count: count,
-                                isSelected: selectedTag == tag,
-                                action: { selectedTag = selectedTag == tag ? nil : tag }
-                            )
-                        }
-                    }
-                }
-            }
-            .padding(.top, isFormatFilterExpanded ? 4 : 0)
-            .padding(.bottom, 4)
         }
+    }
+
+    /// Small icon toggle button that presents a filter popover.
+    private func filterIconButton(
+        systemName: String,
+        isActive: Bool,
+        tooltip: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(isActive ? .appAccent : .appMuted)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isActive ? Color.appAccentDimmed : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(tooltip)
+    }
+
+    /// Chips showing the active format/tag filters, each removable.
+    private var activeFilterChips: some View {
+        HStack(spacing: 4) {
+            if let format = selectedFormat {
+                filterChip(label: "格式: \(format.rawValue)") { selectedFormat = nil }
+            }
+            if let tag = selectedTag {
+                filterChip(label: "标签: \(tag)") { selectedTag = nil }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func filterChip(label: String, onRemove: @escaping () -> Void) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.appAccent)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.appAccent)
+            }
+            .buttonStyle(.plain)
+            .help("清除该筛选")
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.appAccentDimmed)
+        .clipShape(Capsule())
+    }
+
+    /// Popover content for the format filter.
+    private var formatFilterPopover: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            FormatRow(
+                label: "全部",
+                icon: "default",
+                count: allLibraryURLs.count,
+                isSelected: selectedFormat == nil
+            ) {
+                selectedFormat = nil
+                isFormatFilterPresented = false
+            }
+
+            ForEach(FileFormat.allCases, id: \.self) { format in
+                let count = allLibraryURLs.filter { FileFormat.for($0) == format }.count
+                if count > 0 {
+                    FormatRow(
+                        label: format.rawValue,
+                        icon: format.icon,
+                        count: count,
+                        isSelected: selectedFormat == format
+                    ) {
+                        selectedFormat = selectedFormat == format ? nil : format
+                        isFormatFilterPresented = false
+                    }
+                }
+            }
+        }
+        .padding(6)
+        .frame(width: 180)
+    }
+
+    /// Popover content for the tag filter.
+    private var tagFilterPopover: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TagRow(
+                label: "全部",
+                count: allLibraryURLs.count,
+                isSelected: selectedTag == nil,
+                action: {
+                    selectedTag = nil
+                    isTagFilterPresented = false
+                }
+            )
+
+            ForEach(FileTags.allTags(), id: \.self) { tag in
+                let count = allLibraryURLs.filter { FileTags.tags(for: $0).contains(tag) }.count
+                if count > 0 {
+                    TagRow(
+                        label: tag,
+                        count: count,
+                        isSelected: selectedTag == tag,
+                        action: {
+                            selectedTag = selectedTag == tag ? nil : tag
+                            isTagFilterPresented = false
+                        }
+                    )
+                }
+            }
+        }
+        .padding(6)
+        .frame(width: 180)
     }
 
     private var recentSection: some View {
@@ -816,6 +929,46 @@ struct FileSidebar: View {
         return LibraryFolder(id: folder.id, name: folder.name, folders: children, files: files)
     }
 
+    /// 一个搜索结果条目：匹配的文件 + 它在库中的文件夹路径（用于扁平列表定位）。
+    private struct SearchResultItem: Identifiable {
+        let id: UUID
+        let file: LibraryFile
+        let folderPath: String?
+        let folderID: UUID
+    }
+
+    /// 收集所有匹配当前搜索/筛选条件的文件，扁平展开（不保留文件夹层级）。
+    private func collectSearchResults() -> [SearchResultItem] {
+        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var results: [SearchResultItem] = []
+
+        func walk(_ folder: LibraryFolder, path: [String]) {
+            let isInbox = isSystemInbox(folder)
+            // 保持旧树过滤的语义：query 命中文件夹名时，该文件夹（任意层级）下的文件也算匹配
+            let pathMatchesQuery = query.isEmpty || path.contains { $0.localizedCaseInsensitiveContains(query) }
+            for file in folder.files {
+                let matchesText = query.isEmpty || pathMatchesQuery || file.name.localizedCaseInsensitiveContains(query)
+                let matchesFormat = selectedFormat == nil || FileFormat.for(file.sourceURL) == selectedFormat
+                let matchesTag = selectedTag == nil || FileTags.tags(for: file.sourceURL).contains(selectedTag!)
+                guard matchesText && matchesFormat && matchesTag else { continue }
+                // “未分类”在树中是根级文件，视觉上不显示路径
+                let displayPath = isInbox ? nil : path.joined(separator: " / ")
+                results.append(SearchResultItem(id: file.id, file: file, folderPath: displayPath, folderID: folder.id))
+            }
+            for child in folder.folders {
+                walk(child, path: path + [child.name])
+            }
+        }
+
+        for folder in libraryFolders {
+            walk(folder, path: [folder.name])
+        }
+
+        return results.sorted {
+            $0.file.name.localizedStandardCompare($1.file.name) == .orderedAscending
+        }
+    }
+
     private func clearFilters() {
         filterText = ""
         selectedFormat = nil
@@ -824,8 +977,6 @@ struct FileSidebar: View {
 
     private func loadExpansionState() {
         let state = SidebarExpansionStore.load()
-        isFormatFilterExpanded = state.isFormatFilterExpanded
-        isTagFilterExpanded = state.isTagFilterExpanded
         isPinnedExpanded = state.isPinnedExpanded
         isLibraryExpanded = state.isLibraryExpanded
         isRecentExpanded = state.isRecentExpanded
@@ -834,8 +985,6 @@ struct FileSidebar: View {
 
     private var expansionState: SidebarExpansionState {
         SidebarExpansionState(
-            isFormatFilterExpanded: isFormatFilterExpanded,
-            isTagFilterExpanded: isTagFilterExpanded,
             isPinnedExpanded: isPinnedExpanded,
             isLibraryExpanded: isLibraryExpanded,
             isRecentExpanded: isRecentExpanded,
@@ -1373,6 +1522,98 @@ private struct LibraryFileRow: View {
     }
 }
 
+/// 搜索结果场景中的扁平结果行：文件名 + 所在文件夹路径，支持置顶/打标/移除/删除/拖拽。
+/// 行内重命名回到文件树中操作，因此右键菜单不包含“重命名”。
+private struct SearchResultRow: View {
+    let file: LibraryFile
+    let folderPath: String?
+    let folderID: UUID
+    let isSelected: Bool
+    let isPinned: Bool
+    let onSelect: () -> Void
+    let onRemove: (() -> Void)?
+    let onNewTag: (URL) -> Void
+    let onMetadataChanged: () -> Void
+    let onTogglePin: (URL) -> Void
+    let onRequestDelete: (URL) -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Group {
+                if file.isAvailable {
+                    FileTypeIcon(
+                        url: file.sourceURL,
+                        color: isSelected ? .appAccent : .appMuted
+                    )
+                } else {
+                    SidebarIcon(name: "exclamationmark.triangle", color: .orange)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(file.name)
+                    .font(.system(size: 13))
+                    .foregroundColor(file.isAvailable ? .appText : .appMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let folderPath, !folderPath.isEmpty {
+                    Text(folderPath)
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.appMuted.opacity(0.8))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Button { onTogglePin(file.sourceURL) } label: {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isPinned ? .appAccent : .appMuted)
+            }
+            .buttonStyle(.plain)
+            .opacity(isPinned || isHovering ? 1 : 0)
+            .scaleEffect(isPinned || isHovering ? 1 : 0.85, anchor: .trailing)
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if file.isAvailable { onSelect() }
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+        .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
+        .contextMenu {
+            FileItemContextMenu(
+                url: file.sourceURL,
+                isPinned: isPinned,
+                onNewTag: onNewTag,
+                onMetadataChanged: onMetadataChanged,
+                onTogglePin: onTogglePin,
+                onRenameFile: { _ in },
+                onRequestDelete: onRequestDelete,
+                includeRename: false,
+                removeTitle: onRemove == nil ? nil : "从列表移除",
+                onRemove: onRemove
+            )
+        }
+        .onDrag {
+            LibraryFileDragPayload(fileID: file.id, sourceFolderID: folderID).itemProvider()
+        }
+    }
+}
+
 private struct FileItemContextMenu: View {
     let url: URL
     let isPinned: Bool
@@ -1381,6 +1622,7 @@ private struct FileItemContextMenu: View {
     let onTogglePin: (URL) -> Void
     let onRenameFile: (URL) -> Void
     let onRequestDelete: (URL) -> Void
+    var includeRename: Bool = true
     let removeTitle: String?
     let onRemove: (() -> Void)?
 
@@ -1403,7 +1645,9 @@ private struct FileItemContextMenu: View {
         Divider()
         Button(isPinned ? "取消置顶" : "置顶") { onTogglePin(url) }
         Divider()
-        Button("重命名") { onRenameFile(url) }
+        if includeRename {
+            Button("重命名") { onRenameFile(url) }
+        }
         Button("用默认程序打开") {
             NSWorkspace.shared.open(url)
         }
