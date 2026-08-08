@@ -68,6 +68,7 @@ struct MarkdownView: NSViewRepresentable {
     ///   literal (double-quoted, properly escaped), ready to embed directly in JS.
     private func buildHTML(markdownJSON: String) -> String {
         let markedJS = MarkdownView.loadMarkedJS()
+        let mermaidJS = MarkdownView.loadMermaidJS()
 
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -89,11 +90,60 @@ struct MarkdownView: NSViewRepresentable {
         .markdown-body th,.markdown-body td{padding:6px 13px;border:1px solid #ccc8c2}
         .markdown-body th{font-weight:600;background:rgba(0,0,0,0.03)}
         .markdown-body img{max-width:100%}.markdown-body hr{border:0;height:1px;background:#ccc8c2;margin:24px 0}
+        .markdown-body .mermaid{text-align:center;margin:16px 0;overflow-x:auto}
+        .markdown-body .mermaid svg{max-width:100%;height:auto}
+        .markdown-body .mermaid-error{background:rgba(0,0,0,0.05);border:1px solid #e5b8b4;color:#9a3b34;padding:12px 16px;border-radius:6px;font-size:13px;margin:16px 0}
         </style></head><body><div class="markdown-body" id="content"></div>
         <script>\(markedJS)</script>
-        <script>document.getElementById('content').innerHTML=marked.parse(\(markdownJSON));</script>
+        <script>\(mermaidJS)</script>
+        <script>
+        mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'base',
+            fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif',
+            themeVariables: {
+                primaryColor: '#e9f3e0',
+                primaryBorderColor: '#7BC043',
+                primaryTextColor: '#1d1d1f',
+                lineColor: '#8a867f',
+                secondaryColor: '#f3f2ee',
+                tertiaryColor: '#faf9f6',
+                fontSize: '14px'
+            }
+        });
+        document.getElementById('content').innerHTML = marked.parse(\(markdownJSON));
+        (function () {
+            var blocks = document.querySelectorAll('pre code.language-mermaid');
+            blocks.forEach(function (code, i) {
+                var pre = code.parentNode;
+                var id = 'mermaid-' + Date.now() + '-' + i;
+                mermaid.render(id, code.textContent).then(function (res) {
+                    var holder = document.createElement('div');
+                    holder.className = 'mermaid';
+                    holder.innerHTML = res.svg;
+                    pre.replaceWith(holder);
+                }).catch(function (e) {
+                    console.error('[mermaid] render failed:', e);
+                    var note = document.createElement('div');
+                    note.className = 'mermaid-error';
+                    note.textContent = '⚠ 图表渲染失败（Mermaid 语法错误）';
+                    pre.replaceWith(note);
+                });
+            });
+        })();
+        </script>
         </body></html>
         """
+    }
+
+    private static func loadMermaidJS() -> String {
+        guard let url = Bundle.module.url(forResource: "mermaid.min", withExtension: "js"),
+              let js = try? String(contentsOf: url, encoding: .utf8) else {
+            fputs("[MarkdownView] cannot load mermaid.min.js from bundle\n", stderr)
+            return ""
+        }
+        return js
     }
 
     private static func loadMarkedJS() -> String {
