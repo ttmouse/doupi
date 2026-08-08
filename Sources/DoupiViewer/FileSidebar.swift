@@ -1324,6 +1324,7 @@ private struct LibraryFolderBranch: View {
                     .font(.system(size: 13))
                     .foregroundColor(.appText)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 7)
@@ -1473,6 +1474,7 @@ private struct LibraryFileRow: View {
                     .font(.system(size: 13))
                     .foregroundColor(file.isAvailable ? .appText : .appMuted)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
             Spacer(minLength: 0)
 
