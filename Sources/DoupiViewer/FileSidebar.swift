@@ -627,20 +627,29 @@ struct FileSidebar: View {
                 SidebarScrollView(
                     content: VStack(spacing: 0) {
                         ForEach(results) { item in
-                            SearchResultRow(
+                            LibraryFileRow(
                                 file: item.file,
-                                folderPath: item.folderPath,
-                                folderID: item.folderID,
+                                depth: 0,
+                                sourceFolderID: item.folderID,
+                                renameRowID: "",
                                 isSelected: selectedURL?.standardizedFileURL == item.file.sourceURL.standardizedFileURL,
-                                isPinned: pinnedURLs.contains(item.file.sourceURL.standardizedFileURL),
                                 onSelect: { selectedURL = item.file.sourceURL },
                                 onRemove: {
                                     LibraryFolders.removeFile(item.file.id, from: item.folderID, in: &libraryFolders)
                                 },
+                                isPinned: pinnedURLs.contains(item.file.sourceURL.standardizedFileURL),
                                 onNewTag: beginCreatingTag,
                                 onMetadataChanged: refreshMetadata,
                                 onTogglePin: togglePin,
-                                onRequestDelete: requestSourceDeletion
+                                onRenameFile: { _, _ in },
+                                renamingFileURL: nil,
+                                renamingFileRowID: nil,
+                                fileRenameName: .constant(""),
+                                onRenameCommit: { _ in },
+                                onRenameCancel: {},
+                                onRequestDelete: requestSourceDeletion,
+                                folderPath: item.folderPath,
+                                allowsRename: false
                             )
                         }
                     }
@@ -931,7 +940,7 @@ struct FileSidebar: View {
 
     /// 一个搜索结果条目：匹配的文件 + 它在库中的文件夹路径（用于扁平列表定位）。
     private struct SearchResultItem: Identifiable {
-        let id: UUID
+        var id: UUID { file.id }
         let file: LibraryFile
         let folderPath: String?
         let folderID: UUID
@@ -953,7 +962,7 @@ struct FileSidebar: View {
                 guard matchesText && matchesFormat && matchesTag else { continue }
                 // “未分类”在树中是根级文件，视觉上不显示路径
                 let displayPath = isInbox ? nil : path.joined(separator: " / ")
-                results.append(SearchResultItem(id: file.id, file: file, folderPath: displayPath, folderID: folder.id))
+                results.append(SearchResultItem(file: file, folderPath: displayPath, folderID: folder.id))
             }
             for child in folder.folders {
                 walk(child, path: path + [child.name])
@@ -1436,12 +1445,23 @@ private struct LibraryFileRow: View {
     let onRenameCommit: (URL) -> Void
     let onRenameCancel: () -> Void
     let onRequestDelete: (URL) -> Void
+    /// 搜索结果模式下显示所在文件夹路径；nil = 文件树模式（只显示名称）。
+    var folderPath: String? = nil
+    /// false 时禁用行内重命名（搜索结果行回到文件树中重命名）。
+    var allowsRename: Bool = true
     @State private var isHovering = false
     @FocusState private var isRenameFieldFocused: Bool
 
     private var isRenaming: Bool {
-        renamingFileURL?.standardizedFileURL == file.sourceURL.standardizedFileURL
+        allowsRename
+            && renamingFileURL?.standardizedFileURL == file.sourceURL.standardizedFileURL
             && renamingFileRowID == renameRowID
+    }
+
+    /// contextMenu 的重命名回调；搜索结果模式（allowsRename=false）不显示重命名。
+    private var contextMenuRenameHandler: ((URL) -> Void)? {
+        guard allowsRename else { return nil }
+        return { _ in onRenameFile(file.sourceURL, renameRowID) }
     }
 
     var body: some View {
@@ -1470,11 +1490,20 @@ private struct LibraryFileRow: View {
                         if !focused && isRenaming { onRenameCancel() }
                     }
             } else {
-                Text(file.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(file.isAvailable ? .appText : .appMuted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(file.name)
+                        .font(.system(size: 13))
+                        .foregroundColor(file.isAvailable ? .appText : .appMuted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let folderPath, !folderPath.isEmpty {
+                        Text(folderPath)
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.appMuted.opacity(0.8))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
             Spacer(minLength: 0)
 
@@ -1511,7 +1540,7 @@ private struct LibraryFileRow: View {
                 onNewTag: onNewTag,
                 onMetadataChanged: onMetadataChanged,
                 onTogglePin: onTogglePin,
-                onRenameFile: { _ in onRenameFile(file.sourceURL, renameRowID) },
+                onRenameFile: contextMenuRenameHandler,
                 onRequestDelete: onRequestDelete,
                 removeTitle: onRemove == nil ? nil : "从列表移除",
                 onRemove: onRemove
@@ -1524,107 +1553,14 @@ private struct LibraryFileRow: View {
     }
 }
 
-/// 搜索结果场景中的扁平结果行：文件名 + 所在文件夹路径，支持置顶/打标/移除/删除/拖拽。
-/// 行内重命名回到文件树中操作，因此右键菜单不包含“重命名”。
-private struct SearchResultRow: View {
-    let file: LibraryFile
-    let folderPath: String?
-    let folderID: UUID
-    let isSelected: Bool
-    let isPinned: Bool
-    let onSelect: () -> Void
-    let onRemove: (() -> Void)?
-    let onNewTag: (URL) -> Void
-    let onMetadataChanged: () -> Void
-    let onTogglePin: (URL) -> Void
-    let onRequestDelete: (URL) -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Group {
-                if file.isAvailable {
-                    FileTypeIcon(
-                        url: file.sourceURL,
-                        color: isSelected ? .appAccent : .appMuted
-                    )
-                } else {
-                    SidebarIcon(name: "exclamationmark.triangle", color: .orange)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(file.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(file.isAvailable ? .appText : .appMuted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let folderPath, !folderPath.isEmpty {
-                    Text(folderPath)
-                        .font(.system(size: 10.5))
-                        .foregroundColor(.appMuted.opacity(0.8))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            Button { onTogglePin(file.sourceURL) } label: {
-                Image(systemName: isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isPinned ? .appAccent : .appMuted)
-            }
-            .buttonStyle(.plain)
-            .opacity(isPinned || isHovering ? 1 : 0)
-            .scaleEffect(isPinned || isHovering ? 1 : 0.85, anchor: .trailing)
-        }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if file.isAvailable { onSelect() }
-        }
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovering = hovering
-            }
-        }
-        .help(file.isAvailable ? file.sourceURL.path : "原文件已移动或删除")
-        .contextMenu {
-            FileItemContextMenu(
-                url: file.sourceURL,
-                isPinned: isPinned,
-                onNewTag: onNewTag,
-                onMetadataChanged: onMetadataChanged,
-                onTogglePin: onTogglePin,
-                onRenameFile: { _ in },
-                onRequestDelete: onRequestDelete,
-                includeRename: false,
-                removeTitle: onRemove == nil ? nil : "从列表移除",
-                onRemove: onRemove
-            )
-        }
-        .onDrag {
-            LibraryFileDragPayload(fileID: file.id, sourceFolderID: folderID).itemProvider()
-        }
-    }
-}
-
 private struct FileItemContextMenu: View {
     let url: URL
     let isPinned: Bool
     let onNewTag: (URL) -> Void
     let onMetadataChanged: () -> Void
     let onTogglePin: (URL) -> Void
-    let onRenameFile: (URL) -> Void
+    var onRenameFile: ((URL) -> Void)? = nil
     let onRequestDelete: (URL) -> Void
-    var includeRename: Bool = true
     let removeTitle: String?
     let onRemove: (() -> Void)?
 
@@ -1647,7 +1583,7 @@ private struct FileItemContextMenu: View {
         Divider()
         Button(isPinned ? "取消置顶" : "置顶") { onTogglePin(url) }
         Divider()
-        if includeRename {
+        if let onRenameFile {
             Button("重命名") { onRenameFile(url) }
         }
         Button("用默认程序打开") {
