@@ -193,6 +193,7 @@ struct FileSidebar: View {
     @Binding var selectedURL: URL?
     var refreshToken: Int = 0
     @State private var recentFiles: [URL] = []
+    @StateObject private var mounts = LibraryMountIndex()
     @State private var filterText = ""
     @State private var selectedFormat: FileFormat? = nil
     @State private var isDropTargeted = false
@@ -245,8 +246,9 @@ struct FileSidebar: View {
         return libraryFolders.compactMap { filterFolder($0, queryMatchedByAncestor: false) }
     }
 
-    private var allLibraryURLs: [URL] {
-        libraryFolders.flatMap(allURLs)
+    /// 筛选计数要覆盖列表里实际展示的全部文件：虚拟文件树 + live 归档文件夹。
+    private var allDisplayedURLs: [URL] {
+        libraryFolders.flatMap(allURLs) + liveFolders.flatMap(allURLs)
     }
 
     private var filteredRootFiles: (folderID: UUID, files: [LibraryFile])? {
@@ -256,6 +258,19 @@ struct FileSidebar: View {
 
     private var filteredTopLevelFolders: [LibraryFolder] {
         filteredLibraryFolders.filter { !isSystemInbox($0) }
+    }
+
+    /// 归档目录以 live 文件夹的形式挂在文件树底部：每次扫描重建，不写入用户的虚拟文件树。
+    /// 搜索/筛选走扁平结果表，因此这里不需要过滤，只保留筛选计数要用的原始树。
+    private var liveFolders: [LibraryFolder] { mounts.folders }
+
+    private var visibleTopLevelFolders: [LibraryFolder] {
+        filteredTopLevelFolders + liveFolders
+    }
+
+    /// live 文件夹只读：不参与拖拽重排、不写入虚拟文件树。
+    private var liveFolderIDs: Set<UUID> {
+        Set(liveFolders.flatMap(folderIDs(in:)))
     }
 
     private var filteredPinnedURLs: [URL] {
@@ -302,6 +317,7 @@ struct FileSidebar: View {
             handleDrop(providers)
         }
         .frame(minWidth: 200)
+        .task { await mounts.monitor() }
         .onAppear {
             recentFiles = FileHistory.load()
             pinnedURLs = PinnedFiles.load()
@@ -502,7 +518,7 @@ struct FileSidebar: View {
 
             if hasActiveFilters {
                 searchResultsSection
-            } else if isLibraryExpanded && libraryFolders.isEmpty {
+            } else if isLibraryExpanded && visibleTopLevelFolders.isEmpty && filteredRootFiles == nil {
                 VStack(spacing: 5) {
                     Image(systemName: "folder")
                         .font(.system(size: 20, weight: .light))
@@ -517,7 +533,7 @@ struct FileSidebar: View {
                 SidebarScrollView(
                     content: VStack(spacing: 0) {
                         LibraryFolderTree(
-                            folders: filteredTopLevelFolders,
+                            folders: visibleTopLevelFolders,
                             selectedURL: selectedURL,
                             onSelectFile: { selectedURL = $0 },
                             onRenameFolder: { folder in
@@ -551,7 +567,8 @@ struct FileSidebar: View {
                             fileRenameName: $fileRenameName,
                             onRenameCommit: commitRenamingFile,
                             onRenameCancel: cancelRenamingFile,
-                            onRequestDelete: requestSourceDeletion
+                            onRequestDelete: requestSourceDeletion,
+                            liveFolderIDs: liveFolderIDs
                         )
                         if let root = filteredRootFiles {
                             ForEach(root.files) { file in
@@ -578,6 +595,14 @@ struct FileSidebar: View {
                                     onRequestDelete: requestSourceDeletion
                                 )
                             }
+                        }
+                        if let error = mounts.errorMessage {
+                            Text(error)
+                                .font(.system(size: 10))
+                                .foregroundColor(.red)
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 14)
+                                .padding(.top, 4)
                         }
                     }
                     .padding(.horizontal, 4),
@@ -630,12 +655,12 @@ struct FileSidebar: View {
                             LibraryFileRow(
                                 file: item.file,
                                 depth: 0,
-                                sourceFolderID: item.folderID,
+                                sourceFolderID: item.sourceFolderID,
                                 renameRowID: "",
                                 isSelected: selectedURL?.standardizedFileURL == item.file.sourceURL.standardizedFileURL,
                                 onSelect: { selectedURL = item.file.sourceURL },
-                                onRemove: {
-                                    LibraryFolders.removeFile(item.file.id, from: item.folderID, in: &libraryFolders)
+                                onRemove: item.sourceFolderID.map { folderID in
+                                    { LibraryFolders.removeFile(item.file.id, from: folderID, in: &libraryFolders) }
                                 },
                                 isPinned: pinnedURLs.contains(item.file.sourceURL.standardizedFileURL),
                                 onNewTag: beginCreatingTag,
@@ -780,7 +805,7 @@ struct FileSidebar: View {
             FormatRow(
                 label: "全部",
                 icon: "default",
-                count: allLibraryURLs.count,
+                count: allDisplayedURLs.count,
                 isSelected: selectedFormat == nil
             ) {
                 selectedFormat = nil
@@ -788,7 +813,7 @@ struct FileSidebar: View {
             }
 
             ForEach(FileFormat.allCases, id: \.self) { format in
-                let count = allLibraryURLs.filter { FileFormat.for($0) == format }.count
+                let count = allDisplayedURLs.filter { FileFormat.for($0) == format }.count
                 if count > 0 {
                     FormatRow(
                         label: format.rawValue,
@@ -811,7 +836,7 @@ struct FileSidebar: View {
         VStack(alignment: .leading, spacing: 2) {
             TagRow(
                 label: "全部",
-                count: allLibraryURLs.count,
+                count: allDisplayedURLs.count,
                 isSelected: selectedTag == nil,
                 action: {
                     selectedTag = nil
@@ -820,7 +845,7 @@ struct FileSidebar: View {
             )
 
             ForEach(FileTags.allTags(), id: \.self) { tag in
-                let count = allLibraryURLs.filter { FileTags.tags(for: $0).contains(tag) }.count
+                let count = allDisplayedURLs.filter { FileTags.tags(for: $0).contains(tag) }.count
                 if count > 0 {
                     TagRow(
                         label: tag,
@@ -935,7 +960,8 @@ struct FileSidebar: View {
 
         let hasAttributeFilter = selectedFormat != nil || selectedTag != nil
         guard (!hasAttributeFilter && folderMatchesQuery) || !files.isEmpty || !children.isEmpty else { return nil }
-        return LibraryFolder(id: folder.id, name: folder.name, folders: children, files: files)
+        return LibraryFolder(id: folder.id, name: folder.name, sourcePath: folder.sourcePath,
+                             folders: children, files: files)
     }
 
     /// 一个搜索结果条目：匹配的文件 + 它在库中的文件夹路径（用于扁平列表定位）。
@@ -943,7 +969,8 @@ struct FileSidebar: View {
         var id: UUID { file.id }
         let file: LibraryFile
         let folderPath: String?
-        let folderID: UUID
+        /// nil = live 文件夹（归档目录）中的文件，不隶属于虚拟文件树。
+        let sourceFolderID: UUID?
     }
 
     /// 收集所有匹配当前搜索/筛选条件的文件，扁平展开（不保留文件夹层级）。
@@ -953,6 +980,7 @@ struct FileSidebar: View {
 
         func walk(_ folder: LibraryFolder, path: [String]) {
             let isInbox = isSystemInbox(folder)
+            let isLive = folder.sourcePath != nil
             // 保持旧树过滤的语义：query 命中文件夹名时，该文件夹（任意层级）下的文件也算匹配
             let pathMatchesQuery = query.isEmpty || path.contains { $0.localizedCaseInsensitiveContains(query) }
             for file in folder.files {
@@ -962,7 +990,11 @@ struct FileSidebar: View {
                 guard matchesText && matchesFormat && matchesTag else { continue }
                 // “未分类”在树中是根级文件，视觉上不显示路径
                 let displayPath = isInbox ? nil : path.joined(separator: " / ")
-                results.append(SearchResultItem(file: file, folderPath: displayPath, folderID: folder.id))
+                results.append(SearchResultItem(
+                    file: file,
+                    folderPath: displayPath,
+                    sourceFolderID: isLive ? nil : folder.id
+                ))
             }
             for child in folder.folders {
                 walk(child, path: path + [child.name])
@@ -971,6 +1003,9 @@ struct FileSidebar: View {
 
         for folder in libraryFolders {
             walk(folder, path: [folder.name])
+        }
+        for mount in mounts.folders {
+            walk(mount, path: [mount.name])
         }
 
         return results.sorted {
@@ -1254,6 +1289,7 @@ private struct LibraryFolderTree: View {
     let onRenameCommit: (URL) -> Void
     let onRenameCancel: () -> Void
     let onRequestDelete: (URL) -> Void
+    let liveFolderIDs: Set<UUID>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -1280,7 +1316,8 @@ private struct LibraryFolderTree: View {
                     fileRenameName: $fileRenameName,
                     onRenameCommit: onRenameCommit,
                     onRenameCancel: onRenameCancel,
-                    onRequestDelete: onRequestDelete
+                    onRequestDelete: onRequestDelete,
+                    liveFolderIDs: liveFolderIDs
                 )
             }
         }
@@ -1310,8 +1347,12 @@ private struct LibraryFolderBranch: View {
     let onRenameCommit: (URL) -> Void
     let onRenameCancel: () -> Void
     let onRequestDelete: (URL) -> Void
+    let liveFolderIDs: Set<UUID>
     @State private var isHovering = false
     @State private var isDropTargeted = false
+
+    /// 归档目录这类 live 文件夹：只做展示，不参与虚拟文件树的搬移、改名或删除。
+    private var isLive: Bool { liveFolderIDs.contains(folder.id) }
 
     private var hasExpandableContent: Bool {
         !folder.folders.isEmpty || !folder.files.isEmpty
@@ -1353,15 +1394,17 @@ private struct LibraryFolderBranch: View {
                 }
             }
             .onDrag {
-                LibraryFolderDragPayload(
+                guard !isLive else { return NSItemProvider() }
+                return LibraryFolderDragPayload(
                     folderID: folder.id,
                     sourceParentID: parentFolderID
                 ).itemProvider()
             }
             .onHover { isHovering = $0 }
-            .help("单击展开或折叠；拖拽移动文件夹")
+            .help(isLive ? (folder.sourcePath ?? folder.name) : "单击展开或折叠；拖拽移动文件夹")
             .onDrop(of: [libraryFileDragType, .fileURL], isTargeted: $isDropTargeted) { providers, _ in
-                onImportIntoFolder(folder.id, providers)
+                guard !isLive else { return false }
+                return onImportIntoFolder(folder.id, providers)
             }
 
             if isExpanded {
@@ -1389,18 +1432,19 @@ private struct LibraryFolderBranch: View {
                         fileRenameName: $fileRenameName,
                         onRenameCommit: onRenameCommit,
                         onRenameCancel: onRenameCancel,
-                        onRequestDelete: onRequestDelete
+                        onRequestDelete: onRequestDelete,
+                        liveFolderIDs: liveFolderIDs
                     )
                 }
                 ForEach(folder.files) { file in
                     LibraryFileRow(
                         file: file,
                         depth: depth + 1,
-                        sourceFolderID: folder.id,
+                        sourceFolderID: isLive ? nil : folder.id,
                         renameRowID: "library:\(file.id.uuidString)",
                         isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
                         onSelect: { onSelectFile(file.sourceURL) },
-                        onRemove: { onRemoveFile(folder.id, file.id) },
+                        onRemove: isLive ? nil : { onRemoveFile(folder.id, file.id) },
                         isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
                         onNewTag: onNewTag,
                         onMetadataChanged: onMetadataChanged,
@@ -1418,10 +1462,17 @@ private struct LibraryFolderBranch: View {
             }
         }
         .contextMenu {
-            Button("新建子文件夹") { onCreateChildFolder(folder) }
-            Button("重命名") { onRenameFolder(folder) }
-            Divider()
-            Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
+            if isLive {
+                Button("在访达中显示") {
+                    guard let path = folder.sourcePath else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            } else {
+                Button("新建子文件夹") { onCreateChildFolder(folder) }
+                Button("重命名") { onRenameFolder(folder) }
+                Divider()
+                Button("删除文件夹", role: .destructive) { onRemoveFolder(folder) }
+            }
         }
     }
 }

@@ -21,17 +21,21 @@ struct LibraryFile: Identifiable, Codable, Hashable, Sendable {
 struct LibraryFolder: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var name: String
+    /// 仅 live 文件夹（如挂载的归档目录）携带真实磁盘路径；虚拟文件夹为 nil。
+    var sourcePath: String?
     var folders: [LibraryFolder]
     var files: [LibraryFile]
 
     init(
         id: UUID = UUID(),
         name: String,
+        sourcePath: String? = nil,
         folders: [LibraryFolder] = [],
         files: [LibraryFile] = []
     ) {
         self.id = id
         self.name = name
+        self.sourcePath = sourcePath
         self.folders = folders
         self.files = files
     }
