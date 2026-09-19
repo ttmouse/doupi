@@ -16,9 +16,9 @@ package() {
     local config="$1"  # "debug" or "release"
 
     if [ "$config" = "release" ]; then
-        binary="$PROJECT_DIR/.build/release/$APP_NAME"
+        binary="$(swift build -c release --disable-sandbox --show-bin-path)/$APP_NAME"
     else
-        binary="$PROJECT_DIR/.build/arm64-apple-macosx/debug/$APP_NAME"
+        binary="$(swift build --disable-sandbox --show-bin-path)/$APP_NAME"
     fi
 
     app_bundle="$PROJECT_DIR/.build/$config/$APP_NAME.app"
@@ -26,15 +26,24 @@ package() {
     resources_dir="$app_bundle/Contents/Resources"
 
     echo "📦 Packaging $config bundle..."
-    rm -rf "$app_bundle"
+    # Keep one rolling copy of the previous bundle: a failed codesign step
+    # should not leave the user without a runnable app.
+    if [ -d "$app_bundle" ]; then
+        rm -rf "$PROJECT_DIR/.build/package-backup"
+        mv "$app_bundle" "$PROJECT_DIR/.build/package-backup"
+    fi
     mkdir -p "$macos_dir" "$resources_dir"
 
     cp "$binary" "$macos_dir/$APP_NAME"
     cp -r "$PROJECT_DIR/Sources/$APP_NAME/Resources/"* "$resources_dir/"
     cp "$PROJECT_DIR/Sources/$APP_NAME/Resources/Info.plist" "$app_bundle/Contents/Info.plist"
+    # Bundle.module looks next to Bundle.main's resources, so the SwiftPM
+    # resource bundle has to live in Contents/Resources — never in the .app
+    # root, which codesign rejects as unsealed content.
+    cp -R "$(dirname "$binary")/${APP_NAME}_${APP_NAME}.bundle" "$resources_dir/"
 
     # Ad-hoc sign (required for runtime on Apple Silicon)
-    codesign --force --sign - "$app_bundle" 2>/dev/null || true
+    codesign --force --sign - "$app_bundle"
 
     echo "✅ $app_bundle"
 }
@@ -53,6 +62,10 @@ case "${1:-run}" in
     run)
         echo "🔨 Debug build..."
         swift build --disable-sandbox
+        # macOS re-activates the already-running instance instead of the freshly
+        # packaged one, which makes a rebuild look like it had no effect.
+        pkill -x "$APP_NAME" 2>/dev/null || true
+        sleep 0.5
         package debug
         echo "🚀 Opening..."
         open ".build/debug/$APP_NAME.app"

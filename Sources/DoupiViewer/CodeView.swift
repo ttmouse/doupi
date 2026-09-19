@@ -130,8 +130,8 @@ struct CodeView: NSViewRepresentable {
     /// Load highlight.min.js & highlight.min.css from the SPM resource bundle
     /// and assemble a self-contained HTML document.
     private func buildHTML() -> String? {
-        guard let cssURL = Bundle.module.url(forResource: "highlight.min", withExtension: "css"),
-              let jsURL  = Bundle.module.url(forResource: "highlight.min", withExtension: "js"),
+        guard let cssURL = Bundle.module.url(forResource: "highlight.min", withExtension: "css", subdirectory: "Resources"),
+              let jsURL  = Bundle.module.url(forResource: "highlight.min", withExtension: "js", subdirectory: "Resources"),
               let css    = try? String(contentsOf: cssURL, encoding: .utf8),
               let js     = try? String(contentsOf: jsURL, encoding: .utf8)
         else { return nil }

@@ -138,7 +138,7 @@ struct MarkdownView: NSViewRepresentable {
     }
 
     private static func loadMermaidJS() -> String {
-        guard let url = Bundle.module.url(forResource: "mermaid.min", withExtension: "js"),
+        guard let url = Bundle.module.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Resources"),
               let js = try? String(contentsOf: url, encoding: .utf8) else {
             fputs("[MarkdownView] cannot load mermaid.min.js from bundle\n", stderr)
             return ""
@@ -147,7 +147,7 @@ struct MarkdownView: NSViewRepresentable {
     }
 
     private static func loadMarkedJS() -> String {
-        guard let url = Bundle.module.url(forResource: "marked.min", withExtension: "js"),
+        guard let url = Bundle.module.url(forResource: "marked.min", withExtension: "js", subdirectory: "Resources"),
               let js = try? String(contentsOf: url, encoding: .utf8) else {
             fputs("[MarkdownView] cannot load marked.min.js from bundle\n", stderr)
             return ""
