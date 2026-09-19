@@ -187,13 +187,48 @@ private struct SidebarIcon: View {
     }
 }
 
+/// 侧边栏的一行文件。同一个版本族只出现一行，行上挂的是当前版本的 `LibraryFile`。
+private struct VersionedRow: Identifiable {
+    let file: LibraryFile
+    /// 非 nil 表示这一行代表一个版本族，行内可以切换版本。
+    let family: VersionFamily?
+
+    var id: UUID { file.id }
+}
+
+/// 搜索结果的版本行：多带上所在文件夹，用于扁平列表定位。
+private struct VersionedSearchRow: Identifiable {
+    let file: LibraryFile
+    let family: VersionFamily?
+    let sourceFolderID: UUID?
+    let folderPath: String?
+
+    var id: UUID { file.id }
+}
+
+/// 把一组**同磁盘目录**的文件收成侧边栏行：同一个版本族只留当前版本这一行，
+/// 其余版本在该行的版本菜单里切换。目录不同就不归并——同名不等于同一份产物。
+@MainActor
+private func versionedRows(_ files: [LibraryFile]) -> [VersionedRow] {
+    VersionFamilies.families(in: files).map { family in
+        let current = VersionFamilies.current(
+            of: family,
+            chosen: VersionSelectionStore.shared.chosen(for: family.id)
+        )
+        return VersionedRow(file: current, family: family.isFamily ? family : nil)
+    }
+}
+
 /// Sidebar with recent files history.
+@MainActor
 struct FileSidebar: View {
 
     @Binding var selectedURL: URL?
     var refreshToken: Int = 0
     @State private var recentFiles: [URL] = []
     @StateObject private var mounts = LibraryMountIndex()
+    /// 版本选择是跨行共享的状态：某一族切了版本，所有展示它的位置都要跟着重算。
+    @ObservedObject private var versionSelection = VersionSelectionStore.shared
     @State private var filterText = ""
     @State private var selectedFormat: FileFormat? = nil
     @State private var isDropTargeted = false
@@ -442,7 +477,7 @@ struct FileSidebar: View {
                             sourceFolderID: nil,
                             renameRowID: "pinned:\(url.standardizedFileURL.path)",
                             isSelected: selectedURL?.standardizedFileURL == url.standardizedFileURL,
-                            onSelect: { selectedURL = url },
+                            onSelect: { selectedURL = $0 },
                             onRemove: nil,
                             isPinned: true,
                             onNewTag: beginCreatingTag,
@@ -571,18 +606,18 @@ struct FileSidebar: View {
                             liveFolderIDs: liveFolderIDs
                         )
                         if let root = filteredRootFiles {
-                            ForEach(root.files) { file in
+                            ForEach(versionedRows(root.files)) { row in
                                 LibraryFileRow(
-                                    file: file,
+                                    file: row.file,
                                     depth: 0,
                                     sourceFolderID: root.folderID,
-                                    renameRowID: "library:\(file.id.uuidString)",
-                                    isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
-                                    onSelect: { selectedURL = file.sourceURL },
+                                    renameRowID: "library:\(row.file.id.uuidString)",
+                                    isSelected: selectedURL?.standardizedFileURL == row.file.sourceURL.standardizedFileURL,
+                                    onSelect: { selectedURL = $0 },
                                     onRemove: {
-                                        LibraryFolders.removeFile(file.id, from: root.folderID, in: &libraryFolders)
+                                        LibraryFolders.removeFile(row.file.id, from: root.folderID, in: &libraryFolders)
                                     },
-                                    isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
+                                    isPinned: pinnedURLs.contains(row.file.sourceURL.standardizedFileURL),
                                     onNewTag: beginCreatingTag,
                                     onMetadataChanged: refreshMetadata,
                                     onTogglePin: togglePin,
@@ -592,7 +627,8 @@ struct FileSidebar: View {
                                     fileRenameName: $fileRenameName,
                                     onRenameCommit: commitRenamingFile,
                                     onRenameCancel: cancelRenamingFile,
-                                    onRequestDelete: requestSourceDeletion
+                                    onRequestDelete: requestSourceDeletion,
+                                    versionFamily: row.family
                                 )
                             }
                         }
@@ -619,6 +655,7 @@ struct FileSidebar: View {
     /// 每行带所在文件夹路径帮助定位。
     private var searchResultsSection: some View {
         let results = collectSearchResults()
+        let rows = versionedSearchRows(results)
         return VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Text("搜索结果")
@@ -651,18 +688,18 @@ struct FileSidebar: View {
             } else {
                 SidebarScrollView(
                     content: VStack(spacing: 0) {
-                        ForEach(results) { item in
+                        ForEach(rows) { row in
                             LibraryFileRow(
-                                file: item.file,
+                                file: row.file,
                                 depth: 0,
-                                sourceFolderID: item.sourceFolderID,
+                                sourceFolderID: row.sourceFolderID,
                                 renameRowID: "",
-                                isSelected: selectedURL?.standardizedFileURL == item.file.sourceURL.standardizedFileURL,
-                                onSelect: { selectedURL = item.file.sourceURL },
-                                onRemove: item.sourceFolderID.map { folderID in
-                                    { LibraryFolders.removeFile(item.file.id, from: folderID, in: &libraryFolders) }
+                                isSelected: selectedURL?.standardizedFileURL == row.file.sourceURL.standardizedFileURL,
+                                onSelect: { selectedURL = $0 },
+                                onRemove: row.sourceFolderID.map { folderID in
+                                    { LibraryFolders.removeFile(row.file.id, from: folderID, in: &libraryFolders) }
                                 },
-                                isPinned: pinnedURLs.contains(item.file.sourceURL.standardizedFileURL),
+                                isPinned: pinnedURLs.contains(row.file.sourceURL.standardizedFileURL),
                                 onNewTag: beginCreatingTag,
                                 onMetadataChanged: refreshMetadata,
                                 onTogglePin: togglePin,
@@ -673,8 +710,9 @@ struct FileSidebar: View {
                                 onRenameCommit: { _ in },
                                 onRenameCancel: {},
                                 onRequestDelete: requestSourceDeletion,
-                                folderPath: item.folderPath,
-                                allowsRename: false
+                                folderPath: row.folderPath,
+                                allowsRename: false,
+                                versionFamily: row.family
                             )
                         }
                     }
@@ -974,6 +1012,29 @@ struct FileSidebar: View {
     }
 
     /// 收集所有匹配当前搜索/筛选条件的文件，扁平展开（不保留文件夹层级）。
+    /// 搜索结果先按磁盘目录分桶再收成版本行：跨目录的同名文件不是同一份产物。
+    private func versionedSearchRows(_ results: [SearchResultItem]) -> [VersionedSearchRow] {
+        var order: [String] = []
+        var buckets: [String: [SearchResultItem]] = [:]
+        for item in results {
+            let key = item.file.sourceURL.deletingLastPathComponent().path
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(item)
+        }
+        return order.flatMap { key -> [VersionedSearchRow] in
+            let items = buckets[key] ?? []
+            guard let representative = items.first else { return [] }
+            return versionedRows(items.map(\.file)).map { row in
+                VersionedSearchRow(
+                    file: row.file,
+                    family: row.family,
+                    sourceFolderID: representative.sourceFolderID,
+                    folderPath: representative.folderPath
+                )
+            }
+        }
+    }
+
     private func collectSearchResults() -> [SearchResultItem] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
         var results: [SearchResultItem] = []
@@ -1348,6 +1409,8 @@ private struct LibraryFolderBranch: View {
     let onRenameCancel: () -> Void
     let onRequestDelete: (URL) -> Void
     let liveFolderIDs: Set<UUID>
+    /// 版本选择是跨行共享的状态：某一族切了版本，树里展示它的那一行要跟着重算。
+    @ObservedObject private var versionSelection = VersionSelectionStore.shared
     @State private var isHovering = false
     @State private var isDropTargeted = false
 
@@ -1436,16 +1499,16 @@ private struct LibraryFolderBranch: View {
                         liveFolderIDs: liveFolderIDs
                     )
                 }
-                ForEach(folder.files) { file in
+                ForEach(versionedRows(folder.files)) { row in
                     LibraryFileRow(
-                        file: file,
+                        file: row.file,
                         depth: depth + 1,
                         sourceFolderID: isLive ? nil : folder.id,
-                        renameRowID: "library:\(file.id.uuidString)",
-                        isSelected: selectedURL?.standardizedFileURL == file.sourceURL.standardizedFileURL,
-                        onSelect: { onSelectFile(file.sourceURL) },
-                        onRemove: isLive ? nil : { onRemoveFile(folder.id, file.id) },
-                        isPinned: pinnedURLs.contains(file.sourceURL.standardizedFileURL),
+                        renameRowID: "library:\(row.file.id.uuidString)",
+                        isSelected: selectedURL?.standardizedFileURL == row.file.sourceURL.standardizedFileURL,
+                        onSelect: onSelectFile,
+                        onRemove: isLive ? nil : { onRemoveFile(folder.id, row.file.id) },
+                        isPinned: pinnedURLs.contains(row.file.sourceURL.standardizedFileURL),
                         onNewTag: onNewTag,
                         onMetadataChanged: onMetadataChanged,
                         onTogglePin: onTogglePin,
@@ -1455,7 +1518,8 @@ private struct LibraryFolderBranch: View {
                         fileRenameName: $fileRenameName,
                         onRenameCommit: onRenameCommit,
                         onRenameCancel: onRenameCancel,
-                        onRequestDelete: onRequestDelete
+                        onRequestDelete: onRequestDelete,
+                        versionFamily: row.family
                     )
                 }
             }
@@ -1477,13 +1541,119 @@ private struct LibraryFolderBranch: View {
     }
 }
 
+/// 一个版本族的入口：行上显示版本数，点开在版本之间切换。
+///
+/// 只对多成员族出现。「这一行藏着别的版本」是关于行本身的事实，不是悬停才知道的操作提示，
+/// 所以常显；颜色保持中性，只有用户钉住的不是最新版时才用强调色提醒。
+private struct VersionChip: View {
+    let family: VersionFamily
+    let current: LibraryFile
+    let onPick: (LibraryFile) -> Void
+    let onReset: () -> Void
+
+    @State private var isPresented = false
+
+    /// 钉住的版本不是最新那一版——否则用户不知道自己在看旧的。
+    private var isHeld: Bool { current.id != family.latest.id }
+
+    var body: some View {
+        Button { isPresented.toggle() } label: {
+            HStack(spacing: 2) {
+                Text("\(family.members.count) 版")
+                    .font(.system(size: 10, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+            }
+            .foregroundColor(isHeld ? .appAccent : .appMuted)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.appHoverBg))
+        }
+        .buttonStyle(.plain)
+        .help(isHeld
+              ? "共 \(family.members.count) 个版本，当前钉在 \(current.name)"
+              : "共 \(family.members.count) 个版本，当前是最新的一版")
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) { versionList }
+    }
+
+    private var versionList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(family.name)
+                .font(.system(size: 10.5))
+                .foregroundColor(.appMuted)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 3)
+
+            ForEach(Array(family.members.reversed())) { member in
+                Button {
+                    onPick(member)
+                    isPresented = false
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(member.id == current.id ? .appAccent : .clear)
+                            .frame(width: 9)
+                        Text(member.name)
+                            .font(.system(size: 12))
+                            .foregroundColor(member.isAvailable ? .appText : .appMuted)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 10)
+                        Text(Self.timestamp(of: member.sourceURL))
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.appMuted)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isHeld {
+                Divider().padding(.vertical, 2)
+                Button {
+                    onReset()
+                    isPresented = false
+                } label: {
+                    Text("回到最新版本")
+                        .font(.system(size: 11))
+                        .foregroundColor(.appAccent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(6)
+        .frame(width: 300)
+    }
+
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter
+    }()
+
+    private static func timestamp(of url: URL) -> String {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        guard let date = values?.contentModificationDate else { return "" }
+        return timestampFormatter.string(from: date)
+    }
+}
+
 private struct LibraryFileRow: View {
     let file: LibraryFile
     let depth: Int
     let sourceFolderID: UUID?
     let renameRowID: String
     let isSelected: Bool
-    let onSelect: () -> Void
+    /// 当前行展示的文件：版本族里就是当前被选中的那一版。
+    let onSelect: (URL) -> Void
     let onRemove: (() -> Void)?
     let isPinned: Bool
     let onNewTag: (URL) -> Void
@@ -1500,6 +1670,9 @@ private struct LibraryFileRow: View {
     var folderPath: String? = nil
     /// false 时禁用行内重命名（搜索结果行回到文件树中重命名）。
     var allowsRename: Bool = true
+    /// 非 nil 表示这一行代表一个版本族，行内可以切换版本。
+    var versionFamily: VersionFamily? = nil
+    @ObservedObject private var versionSelection = VersionSelectionStore.shared
     @State private var isHovering = false
     @FocusState private var isRenameFieldFocused: Bool
 
@@ -1507,6 +1680,18 @@ private struct LibraryFileRow: View {
         allowsRename
             && renamingFileURL?.standardizedFileURL == file.sourceURL.standardizedFileURL
             && renamingFileRowID == renameRowID
+    }
+
+    /// 文件名没信息量时（`preview (3).html`）用内容里的标题顶上；只读，不改磁盘。
+    private var displayName: String { DocumentTitles.displayName(of: file.sourceURL) }
+
+    /// 副标题行：还原出的名字旁边必须还能看到真实文件名（否则找不到磁盘上的哪个文件），
+    /// 搜索结果里再补上所在文件夹。
+    private var secondaryLine: String? {
+        var parts: [String] = []
+        if displayName != file.name { parts.append(file.name) }
+        if let folderPath, !folderPath.isEmpty { parts.append(folderPath) }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
     /// contextMenu 的重命名回调；搜索结果模式（allowsRename=false）不显示重命名。
@@ -1542,13 +1727,13 @@ private struct LibraryFileRow: View {
                     }
             } else {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(file.name)
+                    Text(displayName)
                         .font(.system(size: 13))
                         .foregroundColor(file.isAvailable ? .appText : .appMuted)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if let folderPath, !folderPath.isEmpty {
-                        Text(folderPath)
+                    if let secondaryLine {
+                        Text(secondaryLine)
                             .font(.system(size: 10.5))
                             .foregroundColor(.appMuted.opacity(0.8))
                             .lineLimit(1)
@@ -1557,6 +1742,18 @@ private struct LibraryFileRow: View {
                 }
             }
             Spacer(minLength: 0)
+
+            if let versionFamily, versionFamily.isFamily {
+                VersionChip(
+                    family: versionFamily,
+                    current: file,
+                    onPick: { picked in
+                        versionSelection.choose(picked.name, for: versionFamily.id)
+                        onSelect(picked.sourceURL)
+                    },
+                    onReset: { versionSelection.choose(nil, for: versionFamily.id) }
+                )
+            }
 
             Button { onTogglePin(file.sourceURL) } label: {
                 Image(systemName: isPinned ? "pin.fill" : "pin")
@@ -1576,7 +1773,7 @@ private struct LibraryFileRow: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            if file.isAvailable { onSelect() }
+            if file.isAvailable { onSelect(file.sourceURL) }
         }
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) {
