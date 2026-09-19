@@ -265,8 +265,10 @@ struct FileSidebar: View {
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
 
+    private var searchQuery: SearchQuery { SearchQuery(filterText) }
+
     private var hasActiveFilters: Bool {
-        !filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !searchQuery.isEmpty
             || selectedFormat != nil
             || selectedTag != nil
     }
@@ -278,7 +280,7 @@ struct FileSidebar: View {
 
     private var filteredLibraryFolders: [LibraryFolder] {
         guard hasActiveFilters else { return libraryFolders }
-        return libraryFolders.compactMap { filterFolder($0, queryMatchedByAncestor: false) }
+        return libraryFolders.compactMap { filterFolder($0, satisfiedByAncestors: []) }
     }
 
     /// 筛选计数要覆盖列表里实际展示的全部文件：虚拟文件树 + live 归档文件夹。
@@ -311,8 +313,9 @@ struct FileSidebar: View {
     private var filteredPinnedURLs: [URL] {
         pinnedURLs
             .filter { url in
-                let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let matchesText = query.isEmpty || url.lastPathComponent.localizedCaseInsensitiveContains(query)
+                // 置顶列表不展示所在位置，所以只用文件名比——否则关键调会命中
+                // 屏幕上根本看不到的磁盘路径，用户无从理解为什么这一行匹配了。
+                let matchesText = searchQuery.matches(fileName: url.lastPathComponent, satisfiedByPath: [])
                 let matchesFormat = selectedFormat == nil || FileFormat.for(url) == selectedFormat
                 let matchesTag = selectedTag == nil || FileTags.tags(for: url).contains(selectedTag!)
                 return matchesText && matchesFormat && matchesTag
@@ -661,6 +664,14 @@ struct FileSidebar: View {
                 Text("搜索结果")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.appMuted)
+                if searchQuery.terms.count > 1 {
+                    // 回显拆出来的条件，让用户确认“AI 菜花”被当成了两个词而不是一个
+                    Text(searchQuery.displayText)
+                        .font(.system(size: 11))
+                        .foregroundColor(.appMuted.opacity(0.7))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 Text("\(results.count) 个文件")
                     .font(.system(size: 11))
                     .foregroundColor(.appMuted.opacity(0.7))
@@ -680,6 +691,13 @@ struct FileSidebar: View {
                         .font(.system(size: 20, weight: .light))
                     Text("没有匹配的文件")
                         .font(.system(size: 11))
+                    if searchQuery.terms.count > 1 {
+                        Text("\(searchQuery.terms.count) 个关键词需要同时命中")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.appMuted.opacity(0.75))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 18)
+                    }
                 }
                 .foregroundColor(.appMuted)
                 .frame(maxWidth: .infinity)
@@ -736,6 +754,7 @@ struct FileSidebar: View {
                         .foregroundColor(.appText)
                         .textFieldStyle(.plain)
                         .focused($isFilterFocused)
+                        .help("多个关键词用空格分隔，需要全部命中；关键词可以落在文件名上，也可以落在它所在的文件夹名上")
                     if !filterText.isEmpty {
                         Button(action: { filterText = "" }) {
                             Image(systemName: "xmark.circle.fill")
@@ -981,19 +1000,20 @@ struct FileSidebar: View {
         folder.name == "未分类" && folder.folders.isEmpty
     }
 
-    private func filterFolder(_ folder: LibraryFolder, queryMatchedByAncestor: Bool) -> LibraryFolder? {
-        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let folderMatchesQuery = !query.isEmpty && folder.name.localizedCaseInsensitiveContains(query)
-        let queryAlreadyMatched = queryMatchedByAncestor || folderMatchesQuery
+    /// 逐级下钻时带着「沿途文件夹已经满足掉哪几个关键词」，
+    /// 所以「AI 菜花」在 `菜花 · AI 销售` 里能整体命中，在别处需要两个词各有着落。
+    private func filterFolder(_ folder: LibraryFolder, satisfiedByAncestors: Set<Int>) -> LibraryFolder? {
+        let satisfied = satisfiedByAncestors.union(searchQuery.satisfied(by: folder.name))
+        let folderMatchesQuery = !searchQuery.isEmpty && searchQuery.isFullySatisfied(by: satisfied)
 
         let files = folder.files.filter { file in
-            let matchesText = query.isEmpty || queryAlreadyMatched || file.name.localizedCaseInsensitiveContains(query)
+            let matchesText = searchQuery.matches(fileName: file.name, satisfiedByPath: satisfied)
             let matchesFormat = selectedFormat == nil || FileFormat.for(file.sourceURL) == selectedFormat
             let matchesTag = selectedTag == nil || FileTags.tags(for: file.sourceURL).contains(selectedTag!)
             return matchesText && matchesFormat && matchesTag
         }
         let children = folder.folders.compactMap {
-            filterFolder($0, queryMatchedByAncestor: queryAlreadyMatched)
+            filterFolder($0, satisfiedByAncestors: satisfied)
         }
 
         let hasAttributeFilter = selectedFormat != nil || selectedTag != nil
@@ -1036,16 +1056,15 @@ struct FileSidebar: View {
     }
 
     private func collectSearchResults() -> [SearchResultItem] {
-        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
         var results: [SearchResultItem] = []
 
-        func walk(_ folder: LibraryFolder, path: [String]) {
+        func walk(_ folder: LibraryFolder, path: [String], satisfiedByAncestors: Set<Int>) {
             let isInbox = isSystemInbox(folder)
             let isLive = folder.sourcePath != nil
-            // 保持旧树过滤的语义：query 命中文件夹名时，该文件夹（任意层级）下的文件也算匹配
-            let pathMatchesQuery = query.isEmpty || path.contains { $0.localizedCaseInsensitiveContains(query) }
+            // 关键词落在文件夹名上时，该文件夹（任意层级）下的文件也算命中
+            let satisfied = satisfiedByAncestors.union(searchQuery.satisfied(by: folder.name))
             for file in folder.files {
-                let matchesText = query.isEmpty || pathMatchesQuery || file.name.localizedCaseInsensitiveContains(query)
+                let matchesText = searchQuery.matches(fileName: file.name, satisfiedByPath: satisfied)
                 let matchesFormat = selectedFormat == nil || FileFormat.for(file.sourceURL) == selectedFormat
                 let matchesTag = selectedTag == nil || FileTags.tags(for: file.sourceURL).contains(selectedTag!)
                 guard matchesText && matchesFormat && matchesTag else { continue }
@@ -1058,15 +1077,15 @@ struct FileSidebar: View {
                 ))
             }
             for child in folder.folders {
-                walk(child, path: path + [child.name])
+                walk(child, path: path + [child.name], satisfiedByAncestors: satisfied)
             }
         }
 
         for folder in libraryFolders {
-            walk(folder, path: [folder.name])
+            walk(folder, path: [folder.name], satisfiedByAncestors: [])
         }
         for mount in mounts.folders {
-            walk(mount, path: [mount.name])
+            walk(mount, path: [mount.name], satisfiedByAncestors: [])
         }
 
         return results.sorted {
