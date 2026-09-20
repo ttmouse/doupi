@@ -5,10 +5,11 @@ import SwiftUI
 struct PreviewContainer: View {
 
     let sourceURL: URL
+    var reloadToken: Int = 0
 
     /// Search support propagated to inner WebView.
     var searchQuery: String? = nil
-    var searchAction: SearchAction? = nil
+    var searchCommand: SearchCommand? = nil
 
     @State private var state: PreviewState = .idle
     @State private var esbuildPath: String?
@@ -42,14 +43,14 @@ struct PreviewContainer: View {
                     .transition(.opacity)
             }
         }
-        .task(id: sourceURL) {
+        .task(id: "\(sourceURL.path)#\(reloadToken)") {
             await runPreviewPipeline()
         }
         .onChange(of: sourceURL) { _, _ in
-            // Reset state when source URL changes so the old preview
-            // doesn't flash while the new pipeline runs.
-            state = .idle
-            webError = nil
+            resetForPipeline()
+        }
+        .onChange(of: reloadToken) { _, _ in
+            resetForPipeline()
         }
     }
 
@@ -84,8 +85,10 @@ struct PreviewContainer: View {
         return WebView(
             fileURL: indexHTMLURL,
             readAccessRoot: workspaceURL,
+            contentKey: sourceURL.path,
+            reloadToken: reloadToken,
             searchQuery: searchQuery,
-            searchAction: searchAction,
+            searchCommand: searchCommand,
             onNavigationError: { err in
                 webError = err
             }
@@ -94,7 +97,13 @@ struct PreviewContainer: View {
 
     // MARK: - Pipeline
 
+    private func resetForPipeline() {
+        state = .idle
+        webError = nil
+    }
+
     private func runPreviewPipeline() async {
+        guard !Task.isCancelled else { return }
         // Step 1: Resolve esbuild (dispatch to background thread explicitly)
         await MainActor.run { state = .resolvingRuntime }
         
@@ -103,6 +112,7 @@ struct PreviewContainer: View {
                 continuation.resume(returning: EsbuildManager.resolve())
             }
         }
+        guard !Task.isCancelled else { return }
         switch resolved {
         case .ready(let path, let version):
             fputs("[PreviewContainer] esbuild ready: \(path) (\(version))\n", stderr)
@@ -123,16 +133,18 @@ struct PreviewContainer: View {
         }
         
         // Step 2 & 3: Prepare workspace + Build (dispatch to background thread explicitly)
+        guard !Task.isCancelled else { return }
         await MainActor.run { state = .building }
         
         let currentEsbuildPath = await MainActor.run { esbuildPath }
-        guard let esbuildPath = currentEsbuildPath else { return }
+        guard !Task.isCancelled, let esbuildPath = currentEsbuildPath else { return }
         
         let result: Result<URL, PreviewBuildError> = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: PreviewCompiler.compile(sourceURL: self.sourceURL, esbuildPath: esbuildPath))
             }
         }
+        guard !Task.isCancelled else { return }
         
         switch result {
         case .success(let indexHTMLURL):
@@ -141,6 +153,7 @@ struct PreviewContainer: View {
         
             // Small delay to let SwiftUI transition to loadingWebView
             try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 state = .buildSucceeded(indexHTMLURL)
             }

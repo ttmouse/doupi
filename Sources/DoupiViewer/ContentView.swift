@@ -8,6 +8,9 @@ struct ContentView: View {
 
     @State private var fileURL: URL?
     @State private var fileInfo: FileInfo?
+    @State private var fileMonitor: FileChangeMonitor?
+    @State private var fileRevision = 0
+    @State private var fileUnavailable = false
     @State private var isDragOver = false
     @State private var sidebarVisible = true {
         didSet {
@@ -74,13 +77,24 @@ struct ContentView: View {
                 handleDrop(providers)
             }
             .onAppear {
-                eventMonitor = registerKeyboardShortcuts()
+                if eventMonitor == nil {
+                    eventMonitor = registerKeyboardShortcuts()
+                }
+                startFileMonitorIfNeeded()
                 consumePendingOpenURL()
             }
             .onChange(of: openRouter.pendingURL) { _, _ in
                 consumePendingOpenURL()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .doupiFileChanged)) { notification in
+                guard let changedURL = notification.object as? URL,
+                      changedURL.standardizedFileURL == fileURL?.standardizedFileURL
+                else { return }
+                refreshCurrentFile()
+            }
             .onDisappear {
+                fileMonitor?.stop()
+                fileMonitor = nil
                 if let monitor = eventMonitor {
                     NSEvent.removeMonitor(monitor)
                     eventMonitor = nil
@@ -127,21 +141,44 @@ struct ContentView: View {
 
     // MARK: - Document area
 
+    @ViewBuilder
     private func documentArea(info: FileInfo) -> some View {
-        let action = search.pendingAction
-        return DocumentView(
-            info: info,
-            searchQuery: search.isVisible ? search.query : nil,
-            searchAction: action,
-            onSearchUpdate: { matchCount, currentMatch in
-                search.matchCount = matchCount
-                search.currentMatch = currentMatch
-            }
-        )
-        .id(info.id)
-        .onAppear {
-            search.pendingAction = nil
+        if fileUnavailable {
+            unavailableFileView(info: info)
+        } else {
+            // 故意不带 .id(info.id)：同一类文件之间切换时复用同一个渲染器。
+            // 每次重建 WKWebView 要 ~90 ms，Markdown 还要重新内联 3.4 MB 渲染器。
+            DocumentView(
+                info: info,
+                refreshToken: fileRevision,
+                searchQuery: search.isVisible ? search.query : nil,
+                searchCommand: search.pendingCommand,
+                onSearchUpdate: { matchCount, currentMatch in
+                    search.matchCount = matchCount
+                    search.currentMatch = currentMatch
+                }
+            )
         }
+    }
+
+    private func unavailableFileView(info: FileInfo) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "doc.badge.ellipsis")
+                .font(.system(size: 36, weight: .light))
+                .foregroundColor(.appMuted)
+            Text("文件暂时不可用")
+                .font(.appTitle)
+                .foregroundColor(.appText)
+            Text("“\(info.name)”已被删除或正在写入，恢复后会自动刷新")
+                .font(.appBody)
+                .foregroundColor(.appMuted)
+                .multilineTextAlignment(.center)
+            Text("⌘R 可手动检查")
+                .font(.appSmall)
+                .foregroundColor(.appMuted)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.appBackground)
     }
 
     // MARK: - Info bar
@@ -207,21 +244,55 @@ struct ContentView: View {
     }
 
     private func closeFile() {
+        fileMonitor?.stop()
+        fileMonitor = nil
         fileURL = nil
         fileInfo = nil
+        fileUnavailable = false
         resetSearch()
     }
 
     private func loadFile(url: URL) {
-        guard let info = FileInfo.from(url: url), info.isRenderable else {
-            fileURL = url
-            fileInfo = FileInfo.from(url: url)
+        let standardizedURL = url.standardizedFileURL
+        guard let info = FileInfo.from(url: standardizedURL), info.isRenderable else {
+            fileMonitor?.stop()
+            fileMonitor = nil
+            fileURL = standardizedURL
+            fileInfo = FileInfo.from(url: standardizedURL)
+            fileUnavailable = !FileManager.default.fileExists(atPath: standardizedURL.path)
             return
         }
-        fileURL = url
+
+        let isSameFile = fileURL?.standardizedFileURL == standardizedURL
+        fileURL = standardizedURL
         fileInfo = info
-        FileHistory.add(url)
+        fileUnavailable = !FileManager.default.fileExists(atPath: standardizedURL.path)
+        if !isSameFile || fileMonitor?.url != standardizedURL {
+            fileMonitor?.stop()
+            fileMonitor = FileChangeMonitor(url: standardizedURL)
+            fileMonitor?.start()
+            fileRevision = 0
+        }
+        FileHistory.add(standardizedURL)
         sidebarRefresh += 1
+    }
+
+    private func startFileMonitorIfNeeded() {
+        guard let url = fileURL,
+              fileInfo?.isRenderable == true,
+              fileMonitor == nil
+        else { return }
+        fileMonitor = FileChangeMonitor(url: url)
+        fileMonitor?.start()
+    }
+
+    /// Re-reads metadata and nudges the current renderer without changing its identity.
+    /// Web renderers use this token to reload or push content while restoring ScrollMemory.
+    private func refreshCurrentFile() {
+        guard let url = fileURL else { return }
+        fileUnavailable = !FileManager.default.fileExists(atPath: url.path)
+        fileInfo = FileInfo.from(url: url) ?? fileInfo
+        fileRevision &+= 1
     }
 
     /// Loads a file URL delivered by the system ("Open With" / default app
@@ -257,11 +328,16 @@ struct ContentView: View {
         search.query = ""
         search.matchCount = 0
         search.currentMatch = 0
-        search.pendingAction = nil
+        search.pendingCommand = nil
+        // commandSeq 不重置：编号只能往前跑。否则关掉搜索再打开时新指令会撞上旧编号，
+        // 被长驻页面当成“已经执行过”而丢掉。
     }
 
     private func navigateSearch(_ dir: Int) {
-        search.pendingAction = dir > 0 ? .next : .prev
+        // 每条指令都带新编号：长驻页面上靠编号判断「这是新的一次」，不然按一次 ⌘G
+        // 会被每一次视图更新重新执行一遍。
+        search.commandSeq += 1
+        search.pendingCommand = SearchCommand(action: dir > 0 ? .next : .prev, id: search.commandSeq)
     }
 
     // MARK: - Keyboard shortcuts
@@ -294,6 +370,12 @@ struct ContentView: View {
             // Esc — close search
             if event.keyCode == 53 && search.isVisible {
                 resetSearch()
+                return nil
+            }
+            // ⌘+R — refresh the current file (manual fallback for missed filesystem events)
+            if event.modifierFlags.contains(.command) && event.keyCode == 15,
+               fileURL != nil {
+                refreshCurrentFile()
                 return nil
             }
             // ⌘+O — open file

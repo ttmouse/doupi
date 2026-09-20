@@ -11,13 +11,14 @@ private let imageCache: NSCache<NSURL, NSImage> = {
 /// Interactive image preview with zoom, pan, and viewport controls.
 struct ImageView: View {
     let url: URL
+    var reloadToken: Int = 0
 
     @State private var zoomScale: CGFloat = 1
     @State private var command: ImageCanvasCommand?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            ZoomableImageCanvas(url: url, zoomScale: $zoomScale, command: command)
+            ZoomableImageCanvas(url: url, reloadToken: reloadToken, zoomScale: $zoomScale, command: command)
                 .background(Color.appBackground)
 
             HStack(spacing: 2) {
@@ -93,6 +94,7 @@ private struct ImageCanvasCommand: Equatable {
 
 private struct ZoomableImageCanvas: NSViewRepresentable {
     let url: URL
+    let reloadToken: Int
     @Binding var zoomScale: CGFloat
     let command: ImageCanvasCommand?
 
@@ -107,13 +109,15 @@ private struct ZoomableImageCanvas: NSViewRepresentable {
         }
         view.loadImage(from: url)
         context.coordinator.loadedURL = url
+        context.coordinator.loadedToken = reloadToken
         return view
     }
 
     func updateNSView(_ nsView: ZoomableImageCanvasView, context: Context) {
-        if context.coordinator.loadedURL != url {
-            nsView.loadImage(from: url)
+        if context.coordinator.loadedURL != url || context.coordinator.loadedToken != reloadToken {
+            nsView.loadImage(from: url, forceReload: context.coordinator.loadedToken != reloadToken)
             context.coordinator.loadedURL = url
+            context.coordinator.loadedToken = reloadToken
         }
         guard let command, context.coordinator.lastCommandID != command.id else { return }
         context.coordinator.lastCommandID = command.id
@@ -123,6 +127,7 @@ private struct ZoomableImageCanvas: NSViewRepresentable {
     final class Coordinator {
         var zoomScale: Binding<CGFloat>
         var loadedURL: URL?
+        var loadedToken = -1
         var lastCommandID: UUID?
 
         init(zoomScale: Binding<CGFloat>) {
@@ -181,8 +186,9 @@ private final class ZoomableImageCanvasView: NSView {
         updateImageFrame()
     }
 
-    func loadImage(from url: URL) {
+    func loadImage(from url: URL, forceReload: Bool = false) {
         let nsURL = url as NSURL
+        if forceReload { imageCache.removeObject(forKey: nsURL) }
         if let cached = imageCache.object(forKey: nsURL) {
             image = cached
         } else if let loaded = NSImage(contentsOf: url) {

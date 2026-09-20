@@ -2,13 +2,19 @@ import SwiftUI
 import WebKit
 
 /// Renders markdown files as formatted HTML using an inline marked.js parser.
+///
+/// 页面长驻：marked（有图时再加 mermaid）只加载一次，之后换文件只把解析结果推进已加载
+/// 好的页面里。整页重载一次要 100–200 ms（光 mermaid 就 3.4 MB，没有图的文档也跟着扛），
+/// 推内容约 0 ms——切换文件时的空白一拍就是这么来的。
 struct MarkdownView: NSViewRepresentable {
+
     let url: URL
+    var reloadToken: Int = 0
     var searchQuery: String? = nil
-    var searchAction: SearchAction? = nil
+    var searchCommand: SearchCommand? = nil
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(searchAction: searchAction)
+        Coordinator(searchCommand: searchCommand)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -16,6 +22,7 @@ struct MarkdownView: NSViewRepresentable {
         let pref = WKWebpagePreferences()
         pref.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pref
+        config.userContentController.add(context.coordinator.page, name: WebContentScript.scrollHandlerName)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -25,26 +32,55 @@ struct MarkdownView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.latestQuery = searchQuery
+        loadOrPush(webView, context: context)
+        applySearchIfReady(webView, context: context)
+        runPendingCommand(webView, context: context)
+    }
+
+    // MARK: - 换文件
+
+    private func loadOrPush(_ webView: WKWebView, context: Context) {
         let key = url.path
-        guard context.coordinator.lastLoadKey != key else {
-            applySearchIfReady(webView, context: context)
+        let coordinator = context.coordinator
+        guard key != coordinator.page.key || coordinator.loadedKind == nil || coordinator.reloadToken != reloadToken else { return }
+        coordinator.reloadToken = reloadToken
+
+        // A deleted file must not leave the previous document frozen on screen;
+        // the next watcher event will push its replacement when it reappears.
+        let markdown = (try? String(contentsOf: url, encoding: .utf8)) ?? "文件已删除或暂时无法读取。"
+        guard let json = Self.jsonString(markdown) else { return }
+
+        let kind = MarkdownShellKind.needed(for: markdown)
+        let restoreY = ScrollMemory.shared.offset(for: key)
+        coordinator.page.begin(key)
+
+        guard coordinator.loadedKind == kind else {
+            // 换壳（或第一次进这个渲染器）：整页加载一次，之后这份壳一直用下去
+            coordinator.loadedKind = kind
+            coordinator.pageReady = false
+            webView.loadHTMLString(
+                Self.shellHTML(kind: kind, initialJSON: json, initialY: restoreY),
+                baseURL: nil
+            )
             return
         }
-        context.coordinator.lastLoadKey = key
-        context.coordinator.pageReady = false
 
-        guard let md = try? String(contentsOf: url, encoding: .utf8) else { return }
-
-        // Encode as JSON so it's a safe JS string literal — JSONEncoder properly escapes
-        // `\`, `"`, `\n`, `\t`, and crucially `/` → `\/` (preventing </script> injection).
-        let encoder = JSONEncoder()
-        guard let jsonData = try? encoder.encode(md),
-              let jsonString = String(data: jsonData, encoding: .utf8)
-        else { return }
-
-        let html = buildHTML(markdownJSON: jsonString)
-        webView.loadHTMLString(html, baseURL: nil)
+        // 同一种壳：只推内容。页面、渲染器、主题都不动。
+        webView.evaluateJavaScript("window.__doupiPush(\(json), \(WebContentScript.number(restoreY))); 1") { _, _ in
+            // innerHTML 换掉之后旧的 <mark> 全没了，把当前搜索重新盖上去
+            self.applySearchIfReady(webView, context: context)
+        }
     }
+
+    private static func jsonString(_ markdown: String) -> String? {
+        // 编码成 JSON 字面量：JSONEncoder 会正确转义 `\`、`"`、换行、制表符，
+        // 以及关键的 `/` → `\/`，防止 `</script>` 把脚本标签提前关掉。
+        guard let data = try? JSONEncoder().encode(markdown) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    // MARK: - 搜索
 
     private func applySearchIfReady(_ webView: WKWebView, context: Context) {
         guard context.coordinator.pageReady else { return }
@@ -53,22 +89,53 @@ struct MarkdownView: NSViewRepresentable {
         } else if searchQuery?.isEmpty != false {
             webView.evaluateJavaScript("doupiSearch('')")
         }
-
-        switch searchAction {
-        case .next?: webView.evaluateJavaScript("doupiNavigate(1)")
-        case .prev?: webView.evaluateJavaScript("doupiNavigate(-1)")
-        case nil: break
-        }
     }
 
-    // MARK: - HTML builder
+    /// 长驻页面上的搜索指令只能执行一次，靠编号区分新旧。
+    private func runPendingCommand(_ webView: WKWebView, context: Context) {
+        guard let action = context.coordinator.take(searchCommand) else { return }
+        guard context.coordinator.pageReady else {
+            // 页面还在加载，指令先存着，didFinish 之后补上
+            context.coordinator.pendingAction = action
+            return
+        }
+        Self.navigate(webView, action: action)
+    }
 
-    /// Builds a self-contained HTML document.
-    /// - Parameter markdownJSON: The markdown content as a JSON-encoded string
-    ///   literal (double-quoted, properly escaped), ready to embed directly in JS.
-    private func buildHTML(markdownJSON: String) -> String {
-        let markedJS = MarkdownView.loadMarkedJS()
-        let mermaidJS = MarkdownView.loadMermaidJS()
+    static func navigate(_ webView: WKWebView, action: SearchAction) {
+        webView.evaluateJavaScript("doupiNavigate(\(action == .next ? 1 : -1))")
+    }
+
+    // MARK: - 页面壳
+
+    /// 长驻页面的 HTML：渲染器 + 样式 + 推内容 / 上报滚动位置的接口，不含具体文档内容。
+    /// - Parameters:
+    ///   - initialJSON: 首次加载直接放进页面的文档，省掉一次往返
+    ///   - initialY: 首次加载要恢复的滚动位置
+    static func shellHTML(kind: MarkdownShellKind, initialJSON: String, initialY: Double) -> String {
+        let markedJS = loadMarkedJS()
+        let mermaidParts = kind == .mermaid
+            ? """
+              <script>\(loadMermaidJS())</script>
+              <script>
+              mermaid.initialize({
+                  startOnLoad: false,
+                  securityLevel: 'strict',
+                  theme: 'base',
+                  fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif',
+                  themeVariables: {
+                      primaryColor: '#e9f3e0',
+                      primaryBorderColor: '#7BC043',
+                      primaryTextColor: '#1d1d1f',
+                      lineColor: '#8a867f',
+                      secondaryColor: '#f3f2ee',
+                      tertiaryColor: '#faf9f6',
+                      fontSize: '14px'
+                  }
+              });
+              </script>
+              """
+            : ""
 
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -95,43 +162,40 @@ struct MarkdownView: NSViewRepresentable {
         .markdown-body .mermaid-error{background:rgba(0,0,0,0.05);border:1px solid #e5b8b4;color:#9a3b34;padding:12px 16px;border-radius:6px;font-size:13px;margin:16px 0}
         </style></head><body><div class="markdown-body" id="content"></div>
         <script>\(markedJS)</script>
-        <script>\(mermaidJS)</script>
+        \(mermaidParts)
         <script>
-        mermaid.initialize({
-            startOnLoad: false,
-            securityLevel: 'strict',
-            theme: 'base',
-            fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif',
-            themeVariables: {
-                primaryColor: '#e9f3e0',
-                primaryBorderColor: '#7BC043',
-                primaryTextColor: '#1d1d1f',
-                lineColor: '#8a867f',
-                secondaryColor: '#f3f2ee',
-                tertiaryColor: '#faf9f6',
-                fontSize: '14px'
-            }
-        });
-        document.getElementById('content').innerHTML = marked.parse(\(markdownJSON));
-        (function () {
-            var blocks = document.querySelectorAll('pre code.language-mermaid');
-            blocks.forEach(function (code, i) {
-                var pre = code.parentNode;
-                var id = 'mermaid-' + Date.now() + '-' + i;
-                mermaid.render(id, code.textContent).then(function (res) {
-                    var holder = document.createElement('div');
-                    holder.className = 'mermaid';
-                    holder.innerHTML = res.svg;
-                    pre.replaceWith(holder);
-                }).catch(function (e) {
-                    console.error('[mermaid] render failed:', e);
-                    var note = document.createElement('div');
-                    note.className = 'mermaid-error';
-                    note.textContent = '⚠ 图表渲染失败（Mermaid 语法错误）';
-                    pre.replaceWith(note);
+        window.__doupiPush = function (mdJSON, y) {
+            window._doupiMatches = [];
+            window._doupiCurrent = -1;
+            document.getElementById('content').innerHTML = marked.parse(mdJSON);
+            function restore() { if (y > 0) window.scrollTo(0, y); }
+            var jobs = [];
+            if (window.mermaid) {
+                var blocks = document.querySelectorAll('pre code.language-mermaid');
+                blocks.forEach(function (code, i) {
+                    var pre = code.parentNode;
+                    var id = 'mermaid-' + Date.now() + '-' + i;
+                    jobs.push(mermaid.render(id, code.textContent).then(function (res) {
+                        var holder = document.createElement('div');
+                        holder.className = 'mermaid';
+                        holder.innerHTML = res.svg;
+                        pre.replaceWith(holder);
+                    }).catch(function (e) {
+                        console.error('[mermaid] render failed:', e);
+                        var note = document.createElement('div');
+                        note.className = 'mermaid-error';
+                        note.textContent = '⚠ 图表渲染失败（Mermaid 语法错误）';
+                        pre.replaceWith(note);
+                    }));
                 });
-            });
-        })();
+            }
+            restore();
+            // 图是异步画的，画完页面高度才定下来，位置要在那之后再钉一次
+            if (jobs.length) Promise.all(jobs).then(restore);
+        };
+        \(WebContentScript.reportScroll)
+        \(WebContentScript.pinScroll(to: initialY))
+        window.__doupiPush(\(initialJSON), \(WebContentScript.number(initialY)));
         </script>
         </body></html>
         """
@@ -158,17 +222,49 @@ struct MarkdownView: NSViewRepresentable {
     // MARK: - Coordinator
 
     class Coordinator: NSObject, WKNavigationDelegate {
-        var lastLoadKey: String = ""
+        let page = ContentPageState()
+        /// 当前页面里装的是哪种壳；nil 表示这份页面还不能推内容
+        var loadedKind: MarkdownShellKind?
+        var reloadToken = -1
         var pageReady = false
-        let searchAction: SearchAction?
+        var latestQuery: String?
+        var pendingAction: SearchAction?
+        private var gate: SearchCommandGate
 
-        init(searchAction: SearchAction?) {
-            self.searchAction = searchAction
+        init(searchCommand: SearchCommand?) {
+            gate = SearchCommandGate(seen: searchCommand)
+        }
+
+        func take(_ command: SearchCommand?) -> SearchAction? {
+            gate.take(command)
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(MarkdownView.searchJS)
             pageReady = true
+            if let q = latestQuery, !q.isEmpty {
+                webView.evaluateJavaScript("doupiSearch('\(q.escapedForJS())')")
+            }
+            // 加载期间按下的 ⌘G 不该丢
+            if let action = pendingAction {
+                pendingAction = nil
+                MarkdownView.navigate(webView, action: action)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            resetPageAfterFailure(error)
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            resetPageAfterFailure(error)
+        }
+
+        /// 整页没加载起来时把壳作废，下一次更新会重新加载，而不是往空页面里推内容。
+        private func resetPageAfterFailure(_ error: Error) {
+            fputs("[MarkdownView] page load failed: \(error.localizedDescription)\n", stderr)
+            loadedKind = nil
+            pageReady = false
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

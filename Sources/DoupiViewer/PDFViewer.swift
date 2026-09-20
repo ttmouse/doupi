@@ -4,6 +4,7 @@ import SwiftUI
 /// Displays PDF files using PDFKit.PDFView.
 struct PDFViewer: NSViewRepresentable {
     let url: URL
+    var reloadToken: Int = 0
 
     func makeNSView(context: Context) -> PDFKit.PDFView {
         let pdfView = PDFKit.PDFView()
@@ -17,9 +18,19 @@ struct PDFViewer: NSViewRepresentable {
     func updateNSView(_ nsView: PDFKit.PDFView, context: Context) {
         if let currentDoc = nsView.document,
            let currentURL = currentDoc.documentURL,
-           currentURL == url {
+           currentURL == url,
+           context.coordinator.loadedToken == reloadToken {
             return
         }
         nsView.document = PDFDocument(url: url)
+        context.coordinator.loadedToken = reloadToken
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator {
+        var loadedToken = -1
     }
 }

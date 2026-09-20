@@ -18,42 +18,29 @@ struct WebView: NSViewRepresentable {
     /// File URL mode: loads a local file with readAccessRoot for sibling resources.
     var fileURL: URL? = nil
     var readAccessRoot: URL? = nil
+    /// Stable identity used for scroll memory when a generated preview URL changes.
+    var contentKey: String? = nil
+    /// Incremented by the file watcher or ⌘R to force a reload of the same URL.
+    var reloadToken: Int = 0
 
     /// When non-nil, trigger JS search highlighting.
     var searchQuery: String? = nil
-    /// Navigate between search matches.
-    var searchAction: SearchAction? = nil
+    /// 一次性搜索指令（带编号，长驻页面上只执行一次）。
+    var searchCommand: SearchCommand? = nil
 
     /// Called when a navigation error occurs (for webRuntimeError detection).
     var onNavigationError: ((String) -> Void)? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator(onNavigationError: onNavigationError) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(searchCommand: searchCommand, onNavigationError: onNavigationError)
+    }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let pref = WKWebpagePreferences()
         pref.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pref
-
-        // Inject CSS: color-scheme auto-adapt + thin transparent scrollbar
-        let scrollbarCSS = "*,*::before,*::after{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,0.3) transparent!important}:root{color-scheme:light dark!important}"
-        let cssScript = WKUserScript(
-            source: """
-            (function(){
-              var s=document.createElement('style');
-              s.textContent='\(scrollbarCSS)';
-              document.head.appendChild(s);
-              // Re-apply on DOM changes (SPA, dynamic content)
-              var o=new MutationObserver(function(){
-                document.documentElement.style.setProperty('scrollbar-color','rgba(128,128,128,0.3) transparent','important');
-              });
-              o.observe(document.body||document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
-            })();
-            """,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
-        )
-        config.userContentController.addUserScript(cssScript)
+        config.userContentController.add(context.coordinator.page, name: WebContentScript.scrollHandlerName)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -77,21 +64,29 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         // Always enforce transparent overlay scrollbar on the native NSScrollView
         applyScrollbarStyle(webView)
+        context.coordinator.latestQuery = searchQuery
 
         // Load content
         if let fileURL = fileURL {
-            let key = fileURL.path
-            if context.coordinator.lastLoadKey != key {
-                context.coordinator.lastLoadKey = key
+            let loadKey = "\(fileURL.path)#\(reloadToken)"
+            let stableKey = contentKey ?? fileURL.path
+            if context.coordinator.lastLoadKey != loadKey {
+                context.coordinator.lastLoadKey = loadKey
                 context.coordinator.pageReady = false
+                context.coordinator.page.begin(stableKey)
                 let root = readAccessRoot ?? fileURL.deletingLastPathComponent()
+                configureScripts(on: webView, restoreY: ScrollMemory.shared.offset(for: stableKey))
                 webView.loadFileURL(fileURL, allowingReadAccessTo: root)
             }
         } else if let htmlString = htmlString {
-            let key = (baseURL?.path ?? "") + htmlString
-            if context.coordinator.lastLoadKey != key {
-                context.coordinator.lastLoadKey = key
+            let basePath = baseURL?.path ?? ""
+            let loadKey = "\(basePath)\(htmlString)#\(reloadToken)"
+            let stableKey = contentKey ?? basePath
+            if context.coordinator.lastLoadKey != loadKey {
+                context.coordinator.lastLoadKey = loadKey
                 context.coordinator.pageReady = false
+                context.coordinator.page.begin(stableKey)
+                configureScripts(on: webView, restoreY: ScrollMemory.shared.offset(for: stableKey))
                 webView.loadHTMLString(htmlString, baseURL: baseURL)
             }
         }
@@ -112,29 +107,85 @@ struct WebView: NSViewRepresentable {
             context.coordinator.currentIdx = 0
         }
 
-        // Handle navigation
-        switch searchAction {
-        case .next?:
-            webView.evaluateJavaScript("doupiNavigate(1)") { result, _ in
-                if let idx = result as? Int { context.coordinator.currentIdx = idx }
+        // Handle navigation — 同一条指令在长驻页面上只执行一次
+        if let action = context.coordinator.take(searchCommand) {
+            if context.coordinator.pageReady {
+                Self.navigate(webView, action: action, coordinator: context.coordinator)
+            } else {
+                // 页面还在加载，指令先存着，didFinish 之后补上
+                context.coordinator.pendingAction = action
             }
-        case .prev?:
-            webView.evaluateJavaScript("doupiNavigate(-1)") { result, _ in
-                if let idx = result as? Int { context.coordinator.currentIdx = idx }
-            }
-        case nil: break
         }
     }
 
+    static func navigate(_ webView: WKWebView, action: SearchAction, coordinator: Coordinator) {
+        webView.evaluateJavaScript("doupiNavigate(\(action == .next ? 1 : -1))") { result, _ in
+            if let idx = result as? Int { coordinator.currentIdx = idx }
+        }
+    }
+
+    /// 每次加载前重设注入脚本。
+    ///
+    /// 脚本是跟着配置走的，一份配置对所有后续加载都生效；这里按当前这次加载要恢复的
+    /// 位置重建，避免把上一份文件的滚动目标带过来。
+    private func configureScripts(on webView: WKWebView, restoreY: Double) {
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(
+            source: Self.styleScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        ))
+        let pin = WebContentScript.pinScroll(to: restoreY)
+        if !pin.isEmpty {
+            controller.addUserScript(WKUserScript(
+                source: pin,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
+        controller.addUserScript(WKUserScript(
+            source: WebContentScript.reportScroll,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+    }
+
+    /// Inject CSS: color-scheme auto-adapt + thin transparent scrollbar
+    private static let scrollbarCSS = "*,*::before,*::after{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,0.3) transparent!important}:root{color-scheme:light dark!important}"
+
+    private static let styleScript = """
+    (function(){
+      var s=document.createElement('style');
+      s.textContent='\(scrollbarCSS)';
+      document.head.appendChild(s);
+      // Re-apply on DOM changes (SPA, dynamic content)
+      var o=new MutationObserver(function(){
+        document.documentElement.style.setProperty('scrollbar-color','rgba(128,128,128,0.3) transparent','important');
+      });
+      o.observe(document.body||document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
+    })();
+    """
+
     class Coordinator: NSObject, WKNavigationDelegate {
+        /// 长驻页面的身份与滚动记忆
+        let page = ContentPageState()
         var lastLoadKey: String = ""
         var pageReady = false
         var matchCount = 0
         var currentIdx = 0
+        var latestQuery: String?
+        var pendingAction: SearchAction?
         let onNavigationError: ((String) -> Void)?
+        private var gate: SearchCommandGate
 
-        init(onNavigationError: ((String) -> Void)?) {
+        init(searchCommand: SearchCommand?, onNavigationError: ((String) -> Void)?) {
+            gate = SearchCommandGate(seen: searchCommand)
             self.onNavigationError = onNavigationError
+        }
+
+        func take(_ command: SearchCommand?) -> SearchAction? {
+            gate.take(command)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -152,6 +203,14 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(WebView.searchInjectionJS)
             pageReady = true
+            if let q = latestQuery, !q.isEmpty {
+                webView.evaluateJavaScript("doupiSearch('\\(q.escapedForJS())')")
+            }
+            // 加载期间按下的 ⌘G 不该丢
+            if let action = pendingAction {
+                pendingAction = nil
+                WebView.navigate(webView, action: action, coordinator: self)
+            }
         }
     }
 
