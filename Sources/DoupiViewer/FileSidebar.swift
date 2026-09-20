@@ -261,6 +261,7 @@ struct FileSidebar: View {
     @State private var renamingFileURL: URL? = nil
     @State private var renamingFileRowID: String? = nil
     @State private var fileRenameName = ""
+    @State private var keyboardFocusedURL: URL?
 
     /// External binding to focus filter from ContentView keyboard shortcut.
     var focusFilter: Binding<Bool>?
@@ -346,6 +347,14 @@ struct FileSidebar: View {
             }
         }
         .background(isDropTargeted ? Color.appAccent.opacity(0.08) : Color.appInfoBg)
+        .overlay {
+            SidebarKeyboardHandler(
+                urls: keyboardNavigationURLs,
+                focusedURL: $keyboardFocusedURL,
+                onOpen: { selectedURL = $0 },
+                onClear: clearFilters
+            )
+        }
         .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
         .overlay(
             RoundedRectangle(cornerRadius: 0)
@@ -372,11 +381,6 @@ struct FileSidebar: View {
                 isFilterFocused = true
                 focusFilter?.wrappedValue = false
             }
-        }
-        .onChange(of: hasActiveFilters) { _, active in
-            // 搜索结果场景会替换文件树，行内重命名随行销毁；避免清除筛选后树重现时
-            // 残留的重命名状态被意外恢复
-            if active { cancelRenamingFile() }
         }
         .onChange(of: expansionState) { _, state in SidebarExpansionStore.save(state) }
         .alert("新建标签", isPresented: $showNewTagAlert) {
@@ -653,6 +657,11 @@ struct FileSidebar: View {
         .background(Color.appInfoBg)
     }
 
+    /// 当前筛选结果的键盘导航顺序。箭头只移动光标，Enter 才打开文件，避免误打开。
+    private var keyboardNavigationURLs: [URL] {
+        versionedSearchRows(collectSearchResults()).map { $0.file.sourceURL.standardizedFileURL }
+    }
+
     /// 搜索/筛选激活时的独立搜索结果场景：扁平列出所有匹配文件，覆盖文件树。
     /// 文件树因为文件夹层级导致匹配结果分散、呈现效率低；这里生成一张平铺列表，
     /// 每行带所在文件夹路径帮助定位。
@@ -713,6 +722,7 @@ struct FileSidebar: View {
                                 sourceFolderID: row.sourceFolderID,
                                 renameRowID: "",
                                 isSelected: selectedURL?.standardizedFileURL == row.file.sourceURL.standardizedFileURL,
+                                isKeyboardFocused: keyboardFocusedURL == row.file.sourceURL.standardizedFileURL,
                                 onSelect: { selectedURL = $0 },
                                 onRemove: row.sourceFolderID.map { folderID in
                                     { LibraryFolders.removeFile(row.file.id, from: folderID, in: &libraryFolders) }
@@ -1348,6 +1358,85 @@ struct FileSidebar: View {
 
 // MARK: - Library Folder Tree
 
+/// Keeps arrow/Enter/Esc navigation out of the large SwiftUI sidebar expression.
+private struct SidebarKeyboardHandler: NSViewRepresentable {
+    let urls: [URL]
+    @Binding var focusedURL: URL?
+    let onOpen: (URL) -> Void
+    let onClear: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.update(urls: urls, focusedURL: $focusedURL, onOpen: onOpen, onClear: onClear)
+        context.coordinator.install()
+        // 必须用不吃事件的宿主：它盖在整个侧边栏上，普通 NSView 会让
+        // 折叠标题、行选中、右键菜单、拖拽全部点不动。
+        return EventPassthroughView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(urls: urls, focusedURL: $focusedURL, onOpen: onOpen, onClear: onClear)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    final class Coordinator {
+        private var monitor: Any?
+        private var urls: [URL] = []
+        private var focusedURL: Binding<URL?>?
+        private var onOpen: ((URL) -> Void)?
+        private var onClear: (() -> Void)?
+
+        func update(urls: [URL], focusedURL: Binding<URL?>, onOpen: @escaping (URL) -> Void, onClear: @escaping () -> Void) {
+            self.urls = urls
+            self.focusedURL = focusedURL
+            self.onOpen = onOpen
+            self.onClear = onClear
+            if let current = focusedURL.wrappedValue, !urls.contains(current) {
+                focusedURL.wrappedValue = urls.first
+            } else if focusedURL.wrappedValue == nil, !urls.isEmpty {
+                focusedURL.wrappedValue = urls.first
+            }
+        }
+
+        func install() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, !self.urls.isEmpty,
+                      !event.modifierFlags.contains(.command),
+                      !event.modifierFlags.contains(.control) else { return event }
+                let index = self.focusedURL?.wrappedValue.flatMap { self.urls.firstIndex(of: $0) }
+                switch event.keyCode {
+                case 125, 126:
+                    let delta = event.keyCode == 125 ? 1 : -1
+                    let base = index ?? (delta > 0 ? -1 : 0)
+                    let next = min(max(base + delta, 0), self.urls.count - 1)
+                    self.focusedURL?.wrappedValue = self.urls[next]
+                    return nil
+                case 36:
+                    if let url = self.focusedURL?.wrappedValue { self.onOpen?(url); return nil }
+                case 53:
+                    self.onClear?()
+                    return nil
+                default:
+                    break
+                }
+                return event
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        deinit { remove() }
+    }
+}
+
 private struct LibraryFolderTree: View {
     let folders: [LibraryFolder]
     let selectedURL: URL?
@@ -1674,6 +1763,7 @@ private struct LibraryFileRow: View {
     let sourceFolderID: UUID?
     let renameRowID: String
     let isSelected: Bool
+    var isKeyboardFocused: Bool = false
     /// 当前行展示的文件：版本族里就是当前被选中的那一版。
     let onSelect: (URL) -> Void
     let onRemove: (() -> Void)?
@@ -1791,7 +1881,7 @@ private struct LibraryFileRow: View {
         .padding(.trailing, 10)
         .background(
             RoundedRectangle(cornerRadius: 5)
-                .fill(isSelected ? Color.appSelectedBg : (isHovering ? Color.appHoverBg : .clear))
+                .fill(isSelected ? Color.appSelectedBg : (isKeyboardFocused || isHovering ? Color.appHoverBg : .clear))
         )
         .contentShape(Rectangle())
         .onTapGesture {
