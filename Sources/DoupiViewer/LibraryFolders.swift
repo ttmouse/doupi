@@ -39,6 +39,29 @@ struct LibraryFolder: Identifiable, Codable, Hashable, Sendable {
         self.folders = folders
         self.files = files
     }
+
+    /// 这个文件夹在访达里的落点。
+    ///
+    /// live 挂载点自带磁盘路径，直接就是它自己。虚拟文件夹不在磁盘上，只有「文件夹里的文件
+    /// 全部来自同一个真实目录」时才认那一处——用户自建文件夹时走的是导入/拖入，文件本身就
+    /// 躺在那份目录里，位置是真实可去的。来源分散时返回 nil：宁可右键里没有这一项，也不把
+    /// 用户带到一个他并不想要的位置。回落的都是目录 URL（`hasDirectoryPath == true`）。
+    var finderLocation: URL? {
+        if let sourcePath {
+            let directory = URL(fileURLWithPath: sourcePath, isDirectory: true).standardizedFileURL
+            return FileManager.default.fileExists(atPath: directory.path) ? directory : nil
+        }
+
+        var directories: Set<URL> = []
+        for file in allFiles {
+            directories.insert(file.sourceURL.deletingLastPathComponent().standardizedFileURL)
+            guard directories.count == 1 else { return nil }
+        }
+        guard let directory = directories.first,
+              FileManager.default.fileExists(atPath: directory.path)
+        else { return nil }
+        return directory
+    }
 }
 
 struct LibraryImport: Sendable {
@@ -51,8 +74,12 @@ struct LibraryImport: Sendable {
 }
 
 private extension LibraryFolder {
+    var allFiles: [LibraryFile] {
+        files + folders.flatMap(\.allFiles)
+    }
+
     var allFileURLs: [URL] {
-        files.map(\.sourceURL) + folders.flatMap(\.allFileURLs)
+        allFiles.map(\.sourceURL)
     }
 }
 

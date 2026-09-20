@@ -1545,12 +1545,15 @@ private struct LibraryFolderBranch: View {
             }
         }
         .contextMenu {
-            if isLive {
+            // 访达入口对 live 与虚拟文件夹一视同仁：能不能去由 finderLocation 决定，
+            // 去不了就干脆不出现，不做一个点了没反应的按钮。
+            if let location = folder.finderLocation {
                 Button("在访达中显示") {
-                    guard let path = folder.sourcePath else { return }
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                    NSWorkspace.shared.activateFileViewerSelecting([location])
                 }
-            } else {
+                if !isLive { Divider() }
+            }
+            if !isLive {
                 Button("新建子文件夹") { onCreateChildFolder(folder) }
                 Button("重命名") { onRenameFolder(folder) }
                 Divider()
